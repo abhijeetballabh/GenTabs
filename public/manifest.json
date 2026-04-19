@@ -1,0 +1,16 @@
+{
+    "manifest_version": 3,
+    "name": "ZenTabs",
+    "version": "1.0.0",
+    "description": "Clean your tabs, free your mind.",
+    "permissions": [
+        "tabs",
+        "storage"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_popup": "index.html"
+    }
+}
