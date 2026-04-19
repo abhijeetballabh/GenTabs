@@ -1,16 +1,17 @@
 {
-    "manifest_version": 3,
-    "name": "ZenTabs",
-    "version": "1.0.0",
-    "description": "Clean your tabs, free your mind.",
-    "permissions": [
-        "tabs",
-        "storage"
-    ],
-    "background": {
-        "service_worker": "background.js"
-    },
-    "action": {
-        "default_popup": "index.html"
-    }
+  "manifest_version": 3,
+  "name": "GenTabs",
+  "version": "1.0.0",
+  "description": "Sweep open tabs into a saved group and close them.",
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "index.html"
+  }
 }
