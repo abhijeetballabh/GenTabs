@@ -9,24 +9,24 @@ import {
   deleteCustomGroup,
   updateGroup
 } from '../api/storage.api';
-import { getAllTabs } from '../api/tabs.api';
-import { prepareTabs } from '../core/sweep';
 import type { Group } from '../types/group';
 import type { Tab } from '../types/tab';
+import { showToast } from '../utils/toast';
+import { getAnalytics } from '../utils/analytics';
+import type { AnalyticsData } from '../utils/analytics';
 
 export const Dashboard: React.FC = () => {
   const [sessions, setSessions] = useState<Group[]>([]);
   const [customGroups, setCustomGroups] = useState<Group[]>([]);
-  const [domainSuggestions, setDomainSuggestions] = useState<{domain: string, count: number, favicon: string, tabs: Tab[]}[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'most_tabs' | 'least_tabs'>('newest');
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({});
   const [expandedCustom, setExpandedCustom] = useState<Record<string, boolean>>({});
   const [initialExpandedSet, setInitialExpandedSet] = useState(false);
 
-  const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export const Dashboard: React.FC = () => {
 
   // Floating panel drag & resize state
   const [panelPos, setPanelPos] = useState({ x: 100, y: 100 });
-  const [panelSize, setPanelSize] = useState({ w: 450, h: 600 });
+  const [panelSize, setPanelSize] = useState({ w: 480, h: 520 });
   const [isDraggingPanel, setIsDraggingPanel] = useState(false);
   const [isResizingPanel, setIsResizingPanel] = useState<'right' | 'bottom' | 'bottom-right' | null>(null);
   
@@ -47,10 +47,7 @@ export const Dashboard: React.FC = () => {
   const [selectedTabs, setSelectedTabs] = useState<Set<string>>(new Set());
   const [lastSelectedTabId, setLastSelectedTabId] = useState<string | null>(null);
 
-  const [saveStatus, setSaveStatus] = useState<string>('');
   const [activeDropdownTabId, setActiveDropdownTabId] = useState<string | null>(null);
-
-  const [playingTabsModal, setPlayingTabsModal] = useState<chrome.tabs.Tab[] | null>(null);
 
   useEffect(() => {
     const closeDropdown = () => setActiveDropdownTabId(null);
@@ -58,18 +55,85 @@ export const Dashboard: React.FC = () => {
     return () => document.removeEventListener('click', closeDropdown);
   }, []);
 
+  const EMOJIS = ['🧑‍💻','📚','🛒','🎨','💼','🔬','🎮','✈️','💰','📝','🏠','🔧','⭐','🔥','🚀','💡','🎯','📌','📅','📊','🎵','🎬','📸','🍔','☕','🌈','🏆','⚡','🌍','❤️'];
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  const [addingNoteToTabId, setAddingNoteToTabId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
+
+  const [duplicateTabs, setDuplicateTabs] = useState<Record<string, chrome.tabs.Tab[]>>({});
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [playingTabsModal, setPlayingTabsModal] = useState<chrome.tabs.Tab[] | null>(null);
+
+
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
+  const [commandSelectedIndex, setCommandSelectedIndex] = useState(0);
+  const commandInputRef = useRef<HTMLInputElement>(null);
+
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette(true);
+        setTimeout(() => commandInputRef.current?.focus(), 10);
+      }
+    };
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  useEffect(() => {
+    chrome.storage.local.get(['theme'], (result) => {
+      if (result.theme) {
+        const savedTheme = result.theme as 'light' | 'dark';
+        setTheme(savedTheme);
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      }
+    });
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    chrome.storage.local.set({ theme: next });
+  };
+
+  useEffect(() => {
+    if (sessions.length > 0 || customGroups.length > 0) {
+      const elements = document.querySelectorAll('.top-bar, .action-card, .group-card, .session-card');
+      elements.forEach((el, i) => {
+        (el as HTMLElement).style.opacity = '0';
+        (el as HTMLElement).style.transform = 'translateY(10px)';
+        (el as HTMLElement).style.transition = 'none';
+        setTimeout(() => {
+          (el as HTMLElement).style.transition = `opacity 300ms ease, transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)`;
+          (el as HTMLElement).style.opacity = '1';
+          (el as HTMLElement).style.transform = 'translateY(0)';
+        }, 60 + i * 35);
+      });
+    }
+  }, [sessions, customGroups]);
+
   useEffect(() => {
     loadData();
-    loadDomainSuggestions();
   }, []);
 
   // Handle global mouse events for draggable & resizable panel
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingPanel) {
+        const newX = e.clientX - dragStartPos.current.x;
+        const newY = e.clientY - dragStartPos.current.y;
+        
         setPanelPos({
-          x: e.clientX - dragStartPos.current.x,
-          y: e.clientY - dragStartPos.current.y
+          x: Math.max(0, Math.min(newX, window.innerWidth - panelSize.w)),
+          y: Math.max(0, Math.min(newY, window.innerHeight - panelSize.h))
         });
       } else if (isResizingPanel) {
         let newW = resizeStartPos.current.w;
@@ -82,8 +146,8 @@ export const Dashboard: React.FC = () => {
           newH = resizeStartPos.current.h + (e.clientY - resizeStartPos.current.y);
         }
         
-        newW = Math.max(350, Math.min(newW, window.innerWidth - panelPos.x - 20));
-        newH = Math.max(300, Math.min(newH, window.innerHeight - panelPos.y - 20));
+        newW = Math.max(350, Math.min(newW, window.innerWidth - panelPos.x));
+        newH = Math.max(300, Math.min(newH, window.innerHeight - panelPos.y));
         
         setPanelSize({ w: newW, h: newH });
       }
@@ -107,7 +171,7 @@ export const Dashboard: React.FC = () => {
       document.removeEventListener('mouseup', handleMouseUp);
       document.body.style.userSelect = '';
     };
-  }, [isDraggingPanel, isResizingPanel, panelPos.x, panelPos.y]);
+  }, [isDraggingPanel, isResizingPanel, panelPos.x, panelPos.y, panelSize.w, panelSize.h]);
 
   const loadData = async () => {
     try {
@@ -120,44 +184,21 @@ export const Dashboard: React.FC = () => {
       }
       const cg = await getCustomGroups();
       setCustomGroups(cg); 
+      const a = await getAnalytics();
+      setAnalytics(a);
     } catch (error) {
       console.error('Failed to load data', error);
     }
   };
 
-  const loadDomainSuggestions = async () => {
-    try {
-      const chromeTabs = await getAllTabs(true);
-      const customTabs = prepareTabs(chromeTabs);
-      const domainMap = new Map<string, {count: number, favicon: string, tabs: Tab[]}>();
-      customTabs.forEach(t => {
-        if (!t.domain || t.domain === 'unknown') return;
-        const entry = domainMap.get(t.domain) || { count: 0, favicon: t.favicon, tabs: [] };
-        entry.count += 1;
-        entry.tabs.push(t);
-        if (!entry.favicon && t.favicon) entry.favicon = t.favicon;
-        domainMap.set(t.domain, entry);
-      });
-      const suggestions = Array.from(domainMap.entries()).map(([domain, data]) => ({ domain, ...data })).sort((a, b) => b.count - a.count);
-      setDomainSuggestions(suggestions);
-    } catch (e) {
-      console.error('Failed to load domain suggestions', e);
-    }
-  };
-
-  const notifyStatus = (msg: string) => {
-    setSaveStatus(msg);
-    setTimeout(() => setSaveStatus(''), 3000);
-  };
-
   const handleDashboardSave = (type: string) => {
-    notifyStatus(type === 'SAVE_CURRENT_SESSION' ? 'Saving Window...' : 'Saving All...');
+    showToast(type === 'SAVE_CURRENT_SESSION' ? 'Saving Window...' : 'Saving All...', 'info');
     chrome.runtime.sendMessage({ type }, async (response) => {
       if (response?.success) {
-        notifyStatus('Saved session successfully!');
+        showToast('Saved session successfully!', 'success');
         await loadData();
       } else {
-        notifyStatus('Error saving session!');
+        showToast('Error saving session!', 'warning');
       }
     });
   };
@@ -165,8 +206,11 @@ export const Dashboard: React.FC = () => {
   // QUICK ACTIONS
   const handleFindPlayingTabs = async () => {
     const tabs = await chrome.tabs.query({ audible: true });
-    setPlayingTabsModal(tabs);
-    if (tabs.length === 0) notifyStatus('No playing tabs found.');
+    if (tabs.length === 0) {
+      showToast('No playing tabs found.', 'info');
+    } else {
+      setPlayingTabsModal(tabs);
+    }
   };
 
   const handleMuteAll = async () => {
@@ -175,7 +219,7 @@ export const Dashboard: React.FC = () => {
     for (const t of tabs) {
       if (t.id) { await chrome.tabs.update(t.id, { muted: true }); count++; }
     }
-    notifyStatus(`Muted ${count} playing tabs.`);
+    showToast(`Muted ${count} playing tabs.`, 'success');
   };
 
   const handleUnmuteAll = async () => {
@@ -184,16 +228,16 @@ export const Dashboard: React.FC = () => {
     for (const t of tabs) {
       if (t.id) { await chrome.tabs.update(t.id, { muted: false }); count++; }
     }
-    notifyStatus(`Unmuted ${count} tabs.`);
+    showToast(`Unmuted ${count} tabs.`, 'success');
   };
 
   const handleRestoreLast = () => {
     const allSorted = [...sessions].sort((a,b)=>b.createdAt - a.createdAt);
     if (allSorted.length > 0) {
       handleOpenTabs(allSorted[0]);
-      notifyStatus('Restored latest session!');
+      showToast('Restored latest session!', 'success');
     } else {
-      notifyStatus('No sessions to restore.');
+      showToast('No sessions to restore.', 'warning');
     }
   };
 
@@ -201,8 +245,40 @@ export const Dashboard: React.FC = () => {
     const tabs = await chrome.tabs.query({ currentWindow: true, active: false });
     const ids = tabs.map(t => t.id).filter(id => id !== undefined) as number[];
     await chrome.tabs.remove(ids);
-    notifyStatus(`Closed ${ids.length} tabs.`);
+    showToast(`Closed ${ids.length} tabs.`, 'success');
   };
+
+  const handleFindDupes = async () => {
+    console.log('Finding duplicates...');
+    try {
+      const tabs = await chrome.tabs.query({});
+      const groups: Record<string, chrome.tabs.Tab[]> = {};
+      tabs.forEach(t => {
+        let u = t.url || t.pendingUrl;
+        if (!u) return;
+        u = u.replace(/\/$/, '').toLowerCase().split('#')[0];
+        if (!groups[u]) groups[u] = [];
+        groups[u].push(t);
+      });
+      
+      const dupes: Record<string, chrome.tabs.Tab[]> = {};
+      Object.keys(groups).forEach(k => {
+        if (groups[k].length > 1) dupes[k] = groups[k];
+      });
+      
+      const dupeCount = Object.keys(dupes).length;
+      if (dupeCount === 0) {
+        showToast('No duplicate tabs found.', 'info');
+      } else {
+        setDuplicateTabs(dupes);
+        setShowDuplicateModal(true);
+      }
+    } catch (err) {
+      console.error('Failed to find duplicates:', err);
+      showToast('Error scanning tabs', 'warning');
+    }
+  };
+
 
   const quickActions = [
     { icon: '🎵', title: 'Find Playing', action: handleFindPlayingTabs },
@@ -210,6 +286,7 @@ export const Dashboard: React.FC = () => {
     { icon: '🔊', title: 'Unmute All', action: handleUnmuteAll },
     { icon: '❌', title: 'Close All Tabs', action: handleCloseAll },
     { icon: '🔄', title: 'Restore Latest', action: handleRestoreLast },
+    { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="14" height="14" rx="2"/><rect x="7" y="7" width="14" height="14" rx="2"/></svg>, title: 'Find Dupes', action: handleFindDupes },
   ];
 
   const handleOpenTabs = (group: Group) => {
@@ -225,11 +302,6 @@ export const Dashboard: React.FC = () => {
 
   const handleDeleteSession = async (id: string) => {
     await deleteGroup(id);
-    await loadData();
-  };
-
-  const handleDeleteCustom = async (id: string) => {
-    await deleteCustomGroup(id);
     await loadData();
   };
 
@@ -255,6 +327,129 @@ export const Dashboard: React.FC = () => {
     await updateCustomGroup({ ...targetGroup, tabs: [...targetGroup.tabs, tab] });
     await loadData();
     setExpandedCustom(prev => ({...prev, [targetGroup.id]: true}));
+  };
+
+  const handleSaveNote = async (groupId: string, isCustom: boolean, tabUrl: string, note: string) => {
+    try {
+      if (isCustom) {
+        const group = customGroups.find(g => g.id === groupId);
+        if (group) {
+          const updatedTabs = group.tabs.map(t => t.url === tabUrl ? { ...t, note } : t);
+          await updateCustomGroup({ ...group, tabs: updatedTabs });
+        }
+      } else {
+        const session = sessions.find(g => g.id === groupId);
+        if (session) {
+          const updatedTabs = session.tabs.map(t => t.url === tabUrl ? { ...t, note } : t);
+          await updateGroup({ ...session, tabs: updatedTabs });
+        }
+      }
+      setAddingNoteToTabId(null);
+      await loadData();
+    } catch(e) { console.error(e); }
+  };
+
+  const handleDeleteCustom = async (id: string) => {
+    await deleteCustomGroup(id);
+    await loadData();
+  };
+
+  const handleBulkOpen = () => {
+    const urlsToOpen = new Set<string>();
+    selectedTabs.forEach(id => { const [, , url] = id.split('|'); urlsToOpen.add(url); });
+    if (urlsToOpen.size > 0) chrome.windows.create({ url: Array.from(urlsToOpen), focused: true });
+    setSelectedTabs(new Set());
+  };
+
+  const handleBulkRemove = async () => {
+    let cg = await getCustomGroups();
+    const removalsByGroup: Record<string, string[]> = {};
+    selectedTabs.forEach(id => {
+      const [groupId, isCustomStr, url] = id.split('|');
+      if (isCustomStr === 'true') {
+        if (!removalsByGroup[groupId]) removalsByGroup[groupId] = [];
+        removalsByGroup[groupId].push(url);
+      }
+    });
+
+    for (const groupId in removalsByGroup) {
+      const group = cg.find(g => g.id === groupId);
+      if (group) {
+        const urlsToRemove = new Set(removalsByGroup[groupId]);
+        const newTabs = group.tabs.filter(t => !urlsToRemove.has(t.url));
+        await updateCustomGroup({ ...group, tabs: newTabs });
+      }
+    }
+    
+    const newSet = new Set(selectedTabs);
+    selectedTabs.forEach(id => { if (id.includes('|true|')) newSet.delete(id); });
+    setSelectedTabs(newSet);
+    await loadData();
+  };
+
+  const handleBulkMoveToGroup = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const targetGroupId = e.target.value;
+    if (!targetGroupId) return;
+    const tabsToAdd: Tab[] = [];
+    const allGroups = [...sessions, ...customGroups];
+
+    selectedTabs.forEach(id => {
+      const [groupId, , url] = id.split('|');
+      const group = allGroups.find(g => g.id === groupId);
+      if (group) {
+        const tab = group.tabs.find(t => t.url === url);
+        if (tab && !tabsToAdd.some(t => t.url === tab.url)) tabsToAdd.push(tab);
+      }
+    });
+
+    const targetGroup = customGroups.find(g => g.id === targetGroupId);
+    if (!targetGroup) return;
+
+    const uniqueTabs = [...targetGroup.tabs];
+    tabsToAdd.forEach(t => { if (!uniqueTabs.some(existing => existing.url === t.url)) uniqueTabs.push(t); });
+
+    await updateCustomGroup({ ...targetGroup, tabs: uniqueTabs });
+    setSelectedTabs(new Set());
+    e.target.value = ""; 
+    await loadData();
+  };
+
+  const handleOpenCreateEditor = () => {
+    openFloatingEditor({ id: crypto.randomUUID(), name: 'New Workspace', createdAt: Date.now(), tabs: [], isPinned: false });
+  };
+
+  const handlePanelDragStart = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Left click only
+    setIsDraggingPanel(true);
+    dragStartPos.current = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
+  };
+
+  const handleAddToReadLater = async (tab: Tab) => {
+    try {
+      let cg = await getCustomGroups();
+      let readLater = cg.find(g => g.id === 'read-later');
+      if (!readLater) {
+        readLater = { id: 'read-later', name: 'Read Later', createdAt: Date.now(), tabs: [], emoji: '🔖', color: '#EAF3DE' };
+        await saveCustomGroup(readLater);
+      }
+      
+      if (!readLater.tabs.some(t => t.url === tab.url)) {
+        readLater.tabs.push({ ...tab, lastAccessed: Date.now() });
+        await updateCustomGroup(readLater);
+      }
+
+      showToast('Saved to Read Later', 'success');
+      
+      const openTabs = await chrome.tabs.query({});
+      const target = openTabs.find(t => t.url === tab.url);
+      if (target && target.id) {
+        await chrome.tabs.remove(target.id);
+      }
+      
+      await loadData();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleTabClick = (e: React.MouseEvent, uniqueId: string) => {
@@ -353,86 +548,18 @@ export const Dashboard: React.FC = () => {
     await loadData();
   };
 
-  const handleBulkOpen = () => {
-    const urlsToOpen = new Set<string>();
-    selectedTabs.forEach(id => { const [, , url] = id.split('|'); urlsToOpen.add(url); });
-    if (urlsToOpen.size > 0) chrome.windows.create({ url: Array.from(urlsToOpen), focused: true });
-    setSelectedTabs(new Set());
-  };
-
-  const handleBulkRemove = async () => {
-    let cg = await getCustomGroups();
-    const removalsByGroup: Record<string, string[]> = {};
-    selectedTabs.forEach(id => {
-      const [groupId, isCustomStr, url] = id.split('|');
-      if (isCustomStr === 'true') {
-        if (!removalsByGroup[groupId]) removalsByGroup[groupId] = [];
-        removalsByGroup[groupId].push(url);
-      }
-    });
-
-    for (const groupId in removalsByGroup) {
-      const group = cg.find(g => g.id === groupId);
-      if (group) {
-        const urlsToRemove = new Set(removalsByGroup[groupId]);
-        const newTabs = group.tabs.filter(t => !urlsToRemove.has(t.url));
-        await updateCustomGroup({ ...group, tabs: newTabs });
-      }
-    }
-    
-    const newSet = new Set(selectedTabs);
-    selectedTabs.forEach(id => { if (id.includes('|true|')) newSet.delete(id); });
-    setSelectedTabs(newSet);
-    await loadData();
-  };
-
-  const handleBulkMoveToGroup = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const targetGroupId = e.target.value;
-    if (!targetGroupId) return;
-    const tabsToAdd: Tab[] = [];
-    const allGroups = [...sessions, ...customGroups];
-
-    selectedTabs.forEach(id => {
-      const [groupId, , url] = id.split('|');
-      const group = allGroups.find(g => g.id === groupId);
-      if (group) {
-        const tab = group.tabs.find(t => t.url === url);
-        if (tab && !tabsToAdd.some(t => t.url === tab.url)) tabsToAdd.push(tab);
-      }
-    });
-
-    const targetGroup = customGroups.find(g => g.id === targetGroupId);
-    if (!targetGroup) return;
-
-    const uniqueTabs = [...targetGroup.tabs];
-    tabsToAdd.forEach(t => { if (!uniqueTabs.some(existing => existing.url === t.url)) uniqueTabs.push(t); });
-
-    await updateCustomGroup({ ...targetGroup, tabs: uniqueTabs });
-    setSelectedTabs(new Set());
-    e.target.value = ""; 
-    await loadData();
-  };
-
   // FLOATING EDITOR HANDLERS
   const openFloatingEditor = (group: Group) => {
     setFloatingEditorGroup(group);
-    setPanelSize({ w: 450, h: 600 });
-    setPanelPos({ x: Math.max(20, (window.innerWidth - 450) / 2), y: Math.max(20, (window.innerHeight - 600) / 2) });
-  };
-
-  const handleOpenCreateEditor = () => {
-    openFloatingEditor({ id: crypto.randomUUID(), name: 'New Workspace', createdAt: Date.now(), tabs: [], isPinned: false });
+    const w = 480;
+    const h = 520;
+    setPanelSize({ w, h });
+    setPanelPos({ x: Math.max(20, (window.innerWidth - w) / 2), y: Math.max(20, (window.innerHeight - h) / 2) });
   };
 
   const handleEditCustomGroup = (group: Group, e: React.MouseEvent) => {
     e.stopPropagation(); 
     openFloatingEditor(group);
-  };
-
-  const handlePanelDragStart = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Left click only
-    setIsDraggingPanel(true);
-    dragStartPos.current = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
   };
 
   const handleSaveFloatingGroup = async () => {
@@ -482,6 +609,87 @@ export const Dashboard: React.FC = () => {
     return g.tabs.some(t => t.title.toLowerCase().includes(q) || t.domain.toLowerCase().includes(q) || (t.url && t.url.toLowerCase().includes(q)));
   };
 
+  const getCommandResults = () => {
+    if (!commandQuery) return [];
+    const q = commandQuery.toLowerCase();
+    const fuzzyMatch = (query: string, str: string) => {
+      let qi = 0;
+      for (let i = 0; i < str.length && qi < query.length; i++) {
+        if (str[i].toLowerCase() === query[qi].toLowerCase()) qi++;
+      }
+      return qi === query.length;
+    };
+
+    let results: any[] = [];
+    quickActions.forEach(qa => {
+      if (fuzzyMatch(q, qa.title)) results.push({ type: 'action', label: qa.title, action: () => { qa.action(); setShowCommandPalette(false); } });
+    });
+    customGroups.forEach(g => {
+      if (fuzzyMatch(q, g.name)) results.push({ type: 'group', label: g.name, sublabel: `${g.tabs.length} tabs`, action: () => { toggleCustom(g.id); setShowCommandPalette(false); } });
+    });
+    sessions.forEach(s => {
+      if (fuzzyMatch(q, s.name)) results.push({ type: 'session', label: s.name, sublabel: `${new Date(s.createdAt).toLocaleDateString()} • ${s.tabs.length} tabs`, action: () => { toggleSession(s.id); setShowCommandPalette(false); } });
+    });
+    const allGroups = [...customGroups, ...sessions];
+    allGroups.forEach(g => {
+      g.tabs.forEach(t => {
+        if (fuzzyMatch(q, t.title) || fuzzyMatch(q, t.domain) || (t.note && fuzzyMatch(q, t.note))) {
+          results.push({ type: 'tab', label: t.title, sublabel: t.domain, action: () => { chrome.tabs.create({ url: t.url }); setShowCommandPalette(false); } });
+        }
+      });
+    });
+    return results.slice(0, 8);
+  };
+
+  const commandResults = getCommandResults();
+
+  const handleCommandKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setCommandSelectedIndex(prev => (prev + 1) % commandResults.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setCommandSelectedIndex(prev => (prev - 1 + commandResults.length) % commandResults.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (commandResults[commandSelectedIndex]) {
+        commandResults[commandSelectedIndex].action();
+      }
+    } else if (e.key === 'Escape') {
+      setShowCommandPalette(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!analytics || !canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+    
+    const w = canvasRef.current.width;
+    const h = canvasRef.current.height;
+    ctx.clearRect(0, 0, w, h);
+    
+    const entries = Object.entries(analytics.dailyTabCounts).sort((a,b) => a[0].localeCompare(b[0])).slice(-7);
+    if (entries.length === 0) return;
+    
+    const maxVal = Math.max(...entries.map(e => e[1]), 10);
+    const padding = 20;
+    const barW = (w - padding*2) / entries.length - 10;
+    
+    ctx.fillStyle = '#1a73e8';
+    entries.forEach(([date, count], i) => {
+      const barH = (count / maxVal) * (h - padding * 2);
+      const x = padding + i * (barW + 10);
+      const y = h - padding - barH;
+      ctx.fillRect(x, y, barW, barH);
+      
+      ctx.fillStyle = '#5f6368';
+      ctx.font = '10px system-ui';
+      ctx.fillText(date.slice(-5), x, h - 5);
+      ctx.fillStyle = '#1a73e8';
+    });
+  }, [analytics]);
+
   const filteredCustomGroups = sortAndPinGroups(customGroups.filter(matchesSearch), true);
   const allFilteredSessions = sortAndPinGroups(sessions.filter(matchesSearch), false);
   const allSessionsSortedByDate = [...sessions].sort((a, b) => b.createdAt - a.createdAt);
@@ -489,58 +697,96 @@ export const Dashboard: React.FC = () => {
   const latestSessionToShow = rawLatestSession && matchesSearch(rawLatestSession) ? rawLatestSession : null;
   const remainingSessionsToShow = allFilteredSessions.filter(s => s.id !== latestSessionToShow?.id);
 
-  const btnStyle = (bg: string, color: string, border: string) => ({
-    padding: '8px 16px', backgroundColor: bg, color, border, borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', transition: 'all 0.2s', whiteSpace: 'nowrap' as const
-  });
-
-  const iconBtnStyle = {
-    background: '#f1f3f4', border: '1px solid #dadce0', cursor: 'pointer', padding: '4px 6px', fontSize: '12px', color: '#5f6368', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s ease'
-  };
-
-  const renderFaviconStrip = (tabs: Tab[]) => {
-    const previewTabs = tabs.slice(0, 5);
-    const extraCount = tabs.length - 5;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        {previewTabs.map((t, idx) => ( <img key={`${t.url}-${idx}`} src={t.favicon || `https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} alt="" title={t.title} style={{ width: '20px', height: '20px', borderRadius: '3px', border: '1px solid #eee', objectFit: 'cover' }} /> ))}
-        {extraCount > 0 && <div style={{ fontSize: '11px', color: '#5f6368', fontWeight: 600, padding: '2px 6px', backgroundColor: '#f1f3f4', borderRadius: '10px' }}>+{extraCount}</div>}
-      </div>
-    );
+  const getTabAgeElement = (lastAccessed?: number) => {
+    if (!lastAccessed) return null;
+    const hours = (Date.now() - lastAccessed) / (1000 * 60 * 60);
+    if (hours < 1) return null;
+    if (hours < 24) return <span className="tab-age">{Math.floor(hours)}h ago</span>;
+    const days = Math.floor(hours / 24);
+    if (days < 3) return <span className="tab-age old">{days}d</span>;
+    return <span className="tab-age stale">{days}d</span>;
   };
 
   const renderTabCard = (tab: Tab, draggable: boolean, groupId: string, isCustom: boolean) => {
     const uniqueId = `${groupId}|${isCustom}|${tab.url}`;
-    const isHovered = hoveredTabId === uniqueId;
     const isChecked = selectedTabs.has(uniqueId);
     
     return (
-      <div className="tab-card" data-id={uniqueId} key={tab.url} draggable={draggable} onDragStart={draggable ? (e) => handleDragStart(e, tab, uniqueId) : undefined} onMouseEnter={() => setHoveredTabId(uniqueId)} onMouseLeave={() => setHoveredTabId(null)} onClick={(e) => handleTabClick(e, uniqueId)}
-        style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: isChecked ? '#f4f8fe' : '#fff', border: `1px solid ${isChecked ? '#1a73e8' : '#eaeaea'}`, borderRadius: '8px', boxShadow: isHovered ? '0 4px 8px rgba(0,0,0,0.06)' : '0 1px 2px rgba(0,0,0,0.02)', cursor: draggable ? 'grab' : 'pointer', transform: isHovered ? 'translateY(-2px)' : 'none', transition: 'all 0.15s ease', height: '52px', boxSizing: 'border-box', userSelect: 'none' }}
+      <div 
+        className={`tab-row ${isChecked ? 'selected' : ''}`} 
+        data-id={uniqueId} 
+        key={tab.url} 
+        draggable={draggable} 
+        onDragStart={draggable ? (e) => handleDragStart(e, tab, uniqueId) : undefined} 
+        onClick={(e) => handleTabClick(e, uniqueId)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden', flex: 1, paddingRight: '10px' }}>
-          <input type="checkbox" checked={isChecked} onChange={() => {}} style={{ marginRight: '10px', cursor: 'pointer', pointerEvents: 'none' }} />
-          <img src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}&sz=64`} alt="" style={{ width: '20px', height: '20px', marginRight: '12px', flexShrink: 0, borderRadius: '4px' }} />
-          <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            <div style={{ fontWeight: 600, fontSize: '13px', textOverflow: 'ellipsis', overflow: 'hidden', color: '#202124' }}>{tab.title}</div>
-            <div style={{ fontSize: '11px', color: '#80868b', textOverflow: 'ellipsis', overflow: 'hidden', marginTop: '2px' }}>{tab.domain}</div>
+        <input 
+          type="checkbox" 
+          className="tab-checkbox"
+          checked={isChecked} 
+          onChange={() => {}} 
+          onClick={e => e.stopPropagation()}
+        />
+        
+        <img 
+          className="tab-favicon"
+          src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}&sz=64`} 
+          alt="" 
+        />
+        
+        <div className="tab-title">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {tab.title}
+            {tab.note && <div className="tab-note-dot" title={tab.note}></div>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{tab.domain}</span>
+            {getTabAgeElement(tab.lastAccessed)}
           </div>
         </div>
         
-        {(isHovered || activeDropdownTabId === uniqueId) && (
-          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            <button onClick={() => chrome.tabs.create({ url: tab.url, active: false })} title="Open Tab" style={iconBtnStyle}>↗️</button>
-            <button onClick={() => navigator.clipboard.writeText(tab.url)} title="Copy URL" style={iconBtnStyle}>📋</button>
-            <div style={{ position: 'relative' }}>
-              <button onClick={() => setActiveDropdownTabId(activeDropdownTabId === uniqueId ? null : uniqueId)} title="Add to Group" style={iconBtnStyle}>➕</button>
-              {activeDropdownTabId === uniqueId && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: '#fff', border: '1px solid #dadce0', borderRadius: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', zIndex: 50, padding: '6px', minWidth: '160px' }}>
-                  <div style={{ fontSize: '11px', color: '#80868b', padding: '4px 8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Add to Group</div>
-                  {customGroups.length === 0 && <div style={{ padding: '6px 8px', fontSize: '12px', color: '#888' }}>No custom groups yet</div>}
-                  {customGroups.map(g => ( <div key={g.id} onClick={(e) => { e.stopPropagation(); handleAddTabToGroup(g.id, tab); setActiveDropdownTabId(null); }} style={{ padding: '8px', fontSize: '13px', cursor: 'pointer', borderRadius: '6px', color: '#202124', fontWeight: 500 }} onMouseEnter={e => e.currentTarget.style.background = '#f1f3f4'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>{g.name}</div> ))}
-                </div>
-              )}
-            </div>
-            {isCustom && <button onClick={() => handleRemoveTab(groupId, tab.url)} title="Remove from Group" style={iconBtnStyle}>✕</button>}
+        <div className="tab-actions" onClick={e => e.stopPropagation()}>
+          <button className="tab-action-btn" onClick={() => chrome.tabs.create({ url: tab.url, active: false })} title="Open Tab">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </button>
+          <button className="tab-action-btn" onClick={() => navigator.clipboard.writeText(tab.url)} title="Copy URL">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+          <div style={{ position: 'relative' }}>
+            <button className="tab-action-btn" onClick={() => setActiveDropdownTabId(activeDropdownTabId === uniqueId ? null : uniqueId)} title="Actions">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            {activeDropdownTabId === uniqueId && (
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 50, padding: '6px', minWidth: '160px' }}>
+                <div className="card-btn" style={{ width: '100%', border: 'none' }} onClick={(e) => { e.stopPropagation(); handleAddToReadLater(tab); setActiveDropdownTabId(null); }}>Save to Read Later</div>
+                <div className="card-btn" style={{ width: '100%', border: 'none' }} onClick={(e) => { e.stopPropagation(); setAddingNoteToTabId(uniqueId); setNoteText(tab.note || ''); setActiveDropdownTabId(null); }}>Add Note</div>
+                <div className="palette-section-label">Add to Group</div>
+                {customGroups.length === 0 && <div style={{ padding: '6px 8px', fontSize: '11px', color: 'var(--text-tertiary)' }}>No groups</div>}
+                {customGroups.map(g => ( <div key={g.id} className="card-btn" style={{ width: '100%', border: 'none' }} onClick={(e) => { e.stopPropagation(); handleAddTabToGroup(g.id, tab); setActiveDropdownTabId(null); }}>{g.name}</div> ))}
+              </div>
+            )}
+          </div>
+          {isCustom && (
+            <button className="tab-action-btn" onClick={() => handleRemoveTab(groupId, tab.url)} title="Remove from Group">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          )}
+        </div>
+        {addingNoteToTabId === uniqueId && (
+          <div style={{ padding: '0 12px 12px 12px' }} onClick={e => e.stopPropagation()}>
+            <textarea
+              autoFocus
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSaveNote(groupId, isCustom, tab.url, noteText);
+                }
+              }}
+              style={{ width: '100%', maxHeight: '80px', fontSize: '13px', border: '0.5px solid #ddd', borderRadius: '6px', padding: '6px 8px', resize: 'none', boxSizing: 'border-box' }}
+              placeholder="Add a note... (Press Enter to save)"
+            />
           </div>
         )}
       </div>
@@ -550,29 +796,36 @@ export const Dashboard: React.FC = () => {
   const renderSessionGroup = (session: Group) => {
     const isExpanded = expandedSessions[session.id];
     return (
-      <div key={session.id} style={{ border: '1px solid #dadce0', borderRadius: '12px', backgroundColor: '#fff', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', marginBottom: '16px' }}>
-        <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div onClick={() => toggleSession(session.id)} style={{ flex: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '14px', color: '#5f6368', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▶</span>
+      <div key={session.id} className="session-card">
+        <div className="card-header" onClick={() => toggleSession(session.id)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+            <div style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s', color: 'var(--text-tertiary)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
             <div>
               {editingSessionId === session.id ? (
-                <input autoFocus value={editingSessionName} onChange={e => setEditingSessionName(e.target.value)} onBlur={() => handleFinishRenameSession(session)} onKeyDown={e => e.key === 'Enter' && handleFinishRenameSession(session)} onClick={e => e.stopPropagation()} style={{ fontSize: '16px', fontWeight: 600, padding: '4px 8px', border: '1px solid #1a73e8', borderRadius: '4px', margin: '0 0 4px 0' }} />
+                <input autoFocus value={editingSessionName} onChange={e => setEditingSessionName(e.target.value)} onBlur={() => handleFinishRenameSession(session)} onKeyDown={e => e.key === 'Enter' && handleFinishRenameSession(session)} onClick={e => e.stopPropagation()} style={{ fontSize: '15px', fontWeight: 600, padding: '4px 8px', border: '1px solid var(--accent-primary)', borderRadius: '4px', background: 'var(--bg-base)', color: 'var(--text-primary)' }} />
               ) : (
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 600 }}>{session.name}</h3>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>{session.name}</h3>
               )}
-              <div style={{ fontSize: '13px', color: '#80868b' }}>{new Date(session.createdAt).toLocaleString()} • {session.tabs.length} tabs {session.windowScope === 'all' ? '• (All Windows)' : ''}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                {new Date(session.createdAt).toLocaleDateString()} • {session.tabs.length} tabs
+              </div>
             </div>
-            {!isExpanded && session.tabs.length > 0 && <div style={{ marginLeft: '24px' }}>{renderFaviconStrip(session.tabs)}</div>}
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={(e) => handleStartRenameSession(session, e)} style={iconBtnStyle} title="Rename">✏️</button>
-            <button onClick={() => handleOpenTabs(session)} style={btnStyle('#fff', '#1a73e8', '1px solid #dadce0')}>Open Tabs</button>
-            <button onClick={() => handleDeleteSession(session.id)} style={btnStyle('#fff', '#d93025', '1px solid #dadce0')}>Delete</button>
+          <div className="card-actions" onClick={e => e.stopPropagation()}>
+            <button className="card-btn" onClick={(e) => handleStartRenameSession(session, e)} title="Rename">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button className="card-btn primary" onClick={() => handleOpenTabs(session)}>Restore</button>
+            <button className="card-btn" onClick={() => handleDeleteSession(session.id)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            </button>
           </div>
         </div>
         {isExpanded && (
-          <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #f1f3f4', paddingTop: '16px', backgroundColor: '#fafbfc' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+          <div className="card-body">
+            <div className="tab-grid">
               {session.tabs.map(tab => renderTabCard(tab, true, session.id, false))}
             </div>
           </div>
@@ -583,39 +836,279 @@ export const Dashboard: React.FC = () => {
 
   if (sessions.length === 0 && customGroups.length === 0 && !searchQuery && !floatingEditorGroup) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'system-ui' }}>
-        <h1 style={{ fontSize: '24px', color: '#202124', marginBottom: '8px' }}>No sessions saved yet</h1>
-        <p style={{ color: '#5f6368', marginBottom: '24px' }}>Start by saving your current tabs</p>
-        <button onClick={() => handleDashboardSave("SAVE_CURRENT_SESSION")} style={{ ...btnStyle('#1a73e8', '#fff', 'none'), padding: '12px 24px', fontSize: '15px' }}>
-          {saveStatus || 'Save Current Window'}
+      <div className="empty-state">
+        <div className="empty-icon">📂</div>
+        <h2>No sessions saved yet</h2>
+        <p>Start by saving your current tabs to organize your workspace.</p>
+        <button onClick={() => handleDashboardSave("SAVE_CURRENT_SESSION")} className="card-btn primary" style={{ padding: '12px 24px' }}>
+          Save Current Window
         </button>
       </div>
     );
   }
-
   return (
-    <div style={{ maxWidth: '950px', margin: '0 auto', padding: '40px 20px', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#202124', paddingBottom: selectedTabs.size > 0 ? '100px' : '40px' }}>
-      
-      {/* PLAYING TABS MODAL (Keeps overlay because it's purely view-only) */}
-      {playingTabsModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: '450px', backgroundColor: '#fff', borderRadius: '16px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', maxHeight: '70vh' }}>
-            <div style={{ padding: '20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fafbfc' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Playing Tabs</h3>
-              <button onClick={() => setPlayingTabsModal(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#5f6368' }}>✕</button>
+    <>
+      <div className="dashboard-layout">
+        {/* TOP BAR */}
+        <header className="top-bar">
+          <div className="logo">
+            <div className="logo-icon">G</div>
+            <div className="logo-text">GenTabs</div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div className="search-wrap">
+              <div className="search-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+              <input 
+                type="text" 
+                className="search-input" 
+                placeholder="Search tabs..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+              />
             </div>
-            <div style={{ padding: '20px', overflowY: 'auto' }}>
-              {playingTabsModal.length === 0 ? (
-                <p style={{ color: '#888', textAlign: 'center', margin: 0 }}>No tabs playing audio right now.</p>
+
+            <button className="tab-action-btn" onClick={toggleTheme} title="Toggle Theme">
+              {theme === 'dark' ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {playingTabsModal.map(t => (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', border: '1px solid #eee', borderRadius: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
-                        <img src={t.favIconUrl || 'https://www.google.com/s2/favicons?domain=google.com'} style={{ width: '16px', height: '16px', marginRight: '12px', borderRadius: '2px' }} />
-                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px', fontWeight: 500 }}>{t.title}</div>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              )}
+            </button>
+
+            <button className="card-btn primary" onClick={() => handleDashboardSave("SAVE_CURRENT_SESSION")}>Save Session</button>
+          </div>
+        </header>
+
+        {/* QUICK ACTIONS */}
+        <section style={{ marginBottom: '40px' }}>
+          <div className="section-header">
+            <h2 className="section-title">Quick Actions</h2>
+          </div>
+          <div className="quick-actions">
+            {quickActions.map(qa => (
+              <div key={qa.title} className="action-card" onClick={qa.action}>
+                <div className="action-icon">{qa.icon}</div>
+                <div className="action-label">{qa.title}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* LATEST SESSION */}
+        {latestSessionToShow && (
+          <section style={{ marginBottom: '40px' }}>
+            <div className="section-header">
+              <h2 className="section-title">Latest Session</h2>
+            </div>
+            {renderSessionGroup(latestSessionToShow)}
+          </section>
+        )}
+
+        {/* WORKSPACES */}
+        <section style={{ marginBottom: '40px' }}>
+          <div className="section-header">
+            <h2 className="section-title">Workspaces</h2>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="most_tabs">Size</option>
+              </select>
+              <button className="card-btn primary" onClick={handleOpenCreateEditor}>+ New Group</button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {filteredCustomGroups.map(group => (
+              <div 
+                key={group.id} 
+                className={`group-card ${dragOverGroupId === group.id ? 'drag-over' : ''}`}
+                onDragOver={e => handleDragOver(e, group.id)} 
+                onDragLeave={handleDragLeave} 
+                onDrop={e => handleDrop(e, group)}
+              >
+                <div className="card-header" onClick={() => toggleCustom(group.id)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                    <div style={{ transform: expandedCustom[group.id] ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s', color: 'var(--text-tertiary)' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </div>
+                    <div className="group-emoji">{group.emoji || '📂'}</div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {group.name} {group.isPinned && <span style={{ color: 'var(--accent-primary)' }}>★</span>}
+                      </h3>
+                      <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>{group.tabs.length} tabs</div>
+                    </div>
+                  </div>
+                  <div className="card-actions" onClick={e => e.stopPropagation()}>
+                    <button className="card-btn" onClick={(e) => handleTogglePin(group, e)}>{group.isPinned ? '★' : '☆'}</button>
+                    <button className="card-btn" onClick={(e) => handleEditCustomGroup(group, e)}>Edit</button>
+                    <button className="card-btn primary" onClick={() => handleOpenTabs(group)}>Restore</button>
+                    <button className="card-btn" onClick={() => handleDeleteCustom(group.id)}>Delete</button>
+                  </div>
+                </div>
+                {expandedCustom[group.id] && (
+                  <div className="card-body">
+                    {group.tabs.length === 0 ? (
+                      <div className="empty-state" style={{ padding: '24px' }}><p>No tabs in this group. Drag tabs here!</p></div>
+                    ) : (
+                      <div className="tab-grid">{group.tabs.map(tab => renderTabCard(tab, false, group.id, true))}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ALL SESSIONS */}
+        {remainingSessionsToShow.length > 0 && (
+          <section style={{ marginBottom: '40px' }}>
+            <div className="section-header"><h2 className="section-title">All Sessions</h2></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>{remainingSessionsToShow.map(session => renderSessionGroup(session))}</div>
+          </section>
+        )}
+
+        {/* INSIGHTS */}
+        <section className="insights-section">
+          <div className="section-header"><h2 className="section-title">Insights & Analytics</h2></div>
+          <div className="insights-grid">
+            <div className="insight-card">
+              <div className="insight-header"><div className="insight-label">Tab Volume (Last 7 Days)</div></div>
+              <div className="insight-body"><canvas ref={canvasRef} width={400} height={180} style={{ width: '100%' }}></canvas></div>
+            </div>
+            <div className="insight-card">
+              <div className="insight-header"><div className="insight-label">Top Domains</div></div>
+              <div className="insight-body">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {analytics && Object.keys(analytics.domainVisits).length > 0 ? (
+                    Object.entries(analytics.domainVisits).sort((a,b) => b[1] - a[1]).slice(0, 5).map(([dom, count], idx) => (
+                      <div key={dom} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ color: 'var(--text-tertiary)', fontWeight: 600, width: '18px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{idx + 1}</span>
+                          <img src={`https://www.google.com/s2/favicons?domain=${dom}&sz=32`} style={{ width: '16px', height: '16px', borderRadius: '2px' }} />
+                          <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{dom}</span>
+                        </div>
+                        <span className="count-badge">{count}</span>
                       </div>
-                      <button onClick={() => { if(t.id) chrome.tabs.update(t.id, { active: true }); }} style={btnStyle('#f1f3f4', '#202124', '1px solid #dadce0')}>Go</button>
+                    ))
+                  ) : <div className="empty-state" style={{ padding: '20px 0' }}>Not enough data yet.</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* FLOATING EDITOR */}
+      {floatingEditorGroup && (
+        <div className="floating-panel" style={{ top: panelPos.y, left: panelPos.x, width: `${panelSize.w}px`, height: `${panelSize.h}px` }}>
+          <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('right'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', right: 0, top: 0, bottom: '15px', width: '6px', cursor: 'ew-resize', zIndex: 10 }} />
+          <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('bottom'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', bottom: 0, left: 0, right: '15px', height: '6px', cursor: 'ns-resize', zIndex: 10 }} />
+          <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('bottom-right'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', bottom: 0, right: 0, width: '15px', height: '15px', cursor: 'nwse-resize', zIndex: 11, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: '4px' }}>
+            <svg width="8" height="8" viewBox="0 0 10 10" style={{ fill: 'var(--border-default)' }}><path d="M 8 10 L 10 10 L 10 8 Z M 4 10 L 10 4 L 10 6 L 6 10 Z M 0 10 L 10 0 L 10 2 L 2 10 Z"/></svg>
+          </div>
+          <div className="panel-header" onMouseDown={handlePanelDragStart}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+              <button className="tab-action-btn" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>{floatingEditorGroup.emoji || '📂'}</button>
+              {showEmojiPicker && (
+                <div style={{ position: 'absolute', top: '100%', left: '20px', width: '220px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', zIndex: 100, boxShadow: 'var(--shadow-lg)' }}>
+                  {EMOJIS.map(e => <div key={e} onClick={() => { setFloatingEditorGroup({...floatingEditorGroup, emoji: e}); setShowEmojiPicker(false); }} style={{ cursor: 'pointer', textAlign: 'center', padding: '6px' }}>{e}</div>)}
+                </div>
+              )}
+              <input className="palette-input" style={{ border: 'none', background: 'transparent' }} value={floatingEditorGroup.name} onChange={e => setFloatingEditorGroup({...floatingEditorGroup, name: e.target.value})} onMouseDown={e => e.stopPropagation()} placeholder="Workspace Name" />
+            </div>
+            <button className="tab-action-btn" onClick={() => setFloatingEditorGroup(null)} onMouseDown={e => e.stopPropagation()}>×</button>
+          </div>
+          <div className="panel-body" onDragOver={e => { e.preventDefault(); setDragOverEditor(true); }} onDragLeave={() => setDragOverEditor(false)} onDrop={handleDropToEditor} style={{ background: dragOverEditor ? 'var(--bg-base)' : 'transparent' }}>
+            {floatingEditorGroup.tabs.length === 0 ? <div className="empty-state">Drag tabs here</div> : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {floatingEditorGroup.tabs.map(tab => (
+                  <div key={tab.url} className="tab-row" style={{ padding: '8px 12px' }}>
+                    <img src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}`} style={{ width: '14px', height: '14px' }} />
+                    <div className="tab-title" style={{ fontSize: '12px' }}>{tab.title}</div>
+                    <button className="tab-action-btn" onClick={() => setFloatingEditorGroup({...floatingEditorGroup, tabs: floatingEditorGroup.tabs.filter(x => x.url !== tab.url)})}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="palette-footer">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <input type="checkbox" checked={floatingEditorGroup.schedule?.onLaunch || false} onChange={e => setFloatingEditorGroup({...floatingEditorGroup, schedule: { ...floatingEditorGroup.schedule, onLaunch: e.target.checked }})} /> Auto-open
+            </label>
+            <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+              <button className="card-btn" onClick={() => setFloatingEditorGroup(null)}>Cancel</button>
+              <button className="card-btn primary" onClick={handleSaveFloatingGroup}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK ACTION BAR */}
+      {selectedTabs.size > 0 && (
+        <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-lg)', padding: '12px 24px', borderRadius: '100px', display: 'flex', alignItems: 'center', gap: '24px', zIndex: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ fontWeight: 600, color: 'var(--accent-primary)', fontSize: '14px' }}>{selectedTabs.size} selected</div>
+            <button onClick={() => setSelectedTabs(new Set())} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '13px' }}>Clear</button>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <select className="sort-select" style={{ height: '32px', padding: '0 12px' }} onChange={handleBulkMoveToGroup} value="">
+              <option value="" disabled>Add to Group...</option>
+              {customGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+            <button className="card-btn" onClick={handleBulkRemove}>Remove</button>
+            <button className="card-btn primary" onClick={handleBulkOpen}>Restore All</button>
+          </div>
+        </div>
+      )}
+
+      {/* MODALS */}
+      {showDuplicateModal && (
+        <div className="palette-overlay" onClick={() => setShowDuplicateModal(false)}>
+          <div className="palette-content" onClick={e => e.stopPropagation()} style={{ width: '640px' }}>
+            <div className="palette-header">
+              <div className="palette-section-label">Duplicate Management</div>
+              <div className="tab-action-btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowDuplicateModal(false); }} title="Close">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </div>
+            </div>
+            <div className="palette-list" style={{ padding: '20px' }}>
+              {Object.keys(duplicateTabs).length === 0 ? <div className="empty-state">No duplicates found.</div> : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{Object.keys(duplicateTabs).length} unique duplicate URLs.</div>
+                    <button className="card-btn primary" onClick={async () => {
+                      let closed = 0;
+                      for (const url of Object.keys(duplicateTabs)) {
+                        const tabs = duplicateTabs[url];
+                        const toClose = tabs.slice(1).map(t => t.id as number);
+                        await chrome.tabs.remove(toClose);
+                        closed += toClose.length;
+                      }
+                      showToast(`Closed ${closed} duplicates`, 'success');
+                      setShowDuplicateModal(false);
+                    }}>Close All</button>
+                  </div>
+                  {Object.entries(duplicateTabs).map(([url, tabs]) => (
+                    <div key={url} className="group-card" style={{ padding: '0', border: '1px solid var(--border-default)', overflow: 'hidden' }}>
+                      <div style={{ padding: '12px 16px', background: 'var(--bg-base)', borderBottom: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <img src={tabs[0].favIconUrl || ''} style={{ width: '16px', height: '16px' }} />
+                          <div style={{ fontSize: '13px', fontWeight: 600 }}>{tabs[0].title}</div>
+                        </div>
+                        <button className="card-btn danger" onClick={async () => {
+                          const toClose = tabs.slice(1).map(t => t.id as number);
+                          await chrome.tabs.remove(toClose);
+                          const newD = {...duplicateTabs}; delete newD[url]; setDuplicateTabs(newD);
+                        }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                          Close {tabs.length - 1}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -625,251 +1118,55 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* FULLY DRAGGABLE & RESIZABLE FLOATING GROUP EDITOR PANEL */}
-      {floatingEditorGroup && (
-        <div 
-          style={{ 
-            position: 'fixed', 
-            top: panelPos.y, 
-            left: panelPos.x, 
-            width: `${panelSize.w}px`, 
-            height: `${panelSize.h}px`, 
-            backgroundColor: '#fff', 
-            borderRadius: '16px', 
-            boxShadow: '0 24px 48px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.05)', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            zIndex: 9999,
-            overflow: 'hidden' // Replaced native resize with custom handlers below
-          }}
-        >
-          {/* CUSTOM RESIZE HANDLES */}
-          <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('right'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', right: 0, top: 0, bottom: '15px', width: '8px', cursor: 'ew-resize', zIndex: 10 }} />
-          <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('bottom'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', bottom: 0, left: 0, right: '15px', height: '8px', cursor: 'ns-resize', zIndex: 10 }} />
-          <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('bottom-right'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', bottom: 0, right: 0, width: '15px', height: '15px', cursor: 'nwse-resize', zIndex: 11, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: '4px' }}>
-            <svg width="8" height="8" viewBox="0 0 10 10" style={{ fill: '#dadce0' }}><path d="M 8 10 L 10 10 L 10 8 Z M 4 10 L 10 4 L 10 6 L 6 10 Z M 0 10 L 10 0 L 10 2 L 2 10 Z"/></svg>
-          </div>
-
-          <div 
-            onMouseDown={handlePanelDragStart}
-            style={{ 
-              padding: '20px', 
-              borderBottom: '1px solid #eee', 
-              backgroundColor: '#fafbfc',
-              cursor: isDraggingPanel ? 'grabbing' : 'grab',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              userSelect: 'none'
-            }}
-          >
-            <input 
-              value={floatingEditorGroup.name} 
-              onChange={e => setFloatingEditorGroup({...floatingEditorGroup, name: e.target.value})} 
-              onMouseDown={e => e.stopPropagation()} 
-              style={{ flex: 1, fontSize: '20px', fontWeight: 700, border: 'none', outline: 'none', backgroundColor: 'transparent', color: '#202124' }} 
-              placeholder="Workspace Name" 
-              autoFocus 
-            />
-            <button 
-              onClick={() => setFloatingEditorGroup(null)} 
-              onMouseDown={e => e.stopPropagation()}
-              style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#5f6368', padding: '0 4px', lineHeight: 1 }}
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div 
-            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragOverEditor(true); }} 
-            onDragLeave={() => setDragOverEditor(false)} 
-            onDrop={handleDropToEditor} 
-            style={{ flex: 1, overflowY: 'auto', padding: '20px', backgroundColor: dragOverEditor ? '#f4f8fe' : '#fff', transition: 'background-color 0.2s' }}
-          >
-            {floatingEditorGroup.tabs.length === 0 && domainSuggestions.length > 0 && (
-              <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#f8f9fa', border: '1px solid #e8eaed', borderRadius: '8px' }}>
-                <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#202124' }}>💡 Group by Domain</h4>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {domainSuggestions.map(ds => (
-                    <button key={ds.domain} onClick={() => {
-                      const newTabs = [...floatingEditorGroup.tabs];
-                      ds.tabs.forEach(t => { if (!newTabs.some(x => x.url === t.url)) newTabs.push(t); });
-                      setFloatingEditorGroup({...floatingEditorGroup, tabs: newTabs});
-                    }} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#fff', border: '1px solid #dadce0', borderRadius: '16px', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>
-                      <img src={ds.favicon || `https://www.google.com/s2/favicons?domain=${ds.domain}`} alt="" style={{width: '14px', height: '14px'}} />
-                      {ds.domain} <span style={{color: '#80868b'}}>{ds.count}</span>
-                    </button>
-                  ))}
-                </div>
+      {playingTabsModal && (
+        <div className="palette-overlay" onClick={() => setPlayingTabsModal(null)}>
+          <div className="palette-content" onClick={e => e.stopPropagation()} style={{ width: '450px' }}>
+            <div className="palette-header">
+              <div className="palette-section-label">Playing Audio</div>
+              <div className="tab-action-btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPlayingTabsModal(null); }} title="Close">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </div>
-            )}
-
-            <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#5f6368', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tabs in Group ({floatingEditorGroup.tabs.length})</h4>
-            {floatingEditorGroup.tabs.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: '#80868b', border: '2px dashed #dadce0', borderRadius: '8px', fontSize: '14px' }}>Drag & drop tabs here from your dashboard to add them.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {floatingEditorGroup.tabs.map(tab => (
-                  <div key={tab.url} style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#fff', border: '1px solid #eee', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                    <img src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}&sz=64`} style={{ width: '16px', height: '16px', marginRight: '12px', borderRadius: '2px' }} />
-                    <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '13px', fontWeight: 500, color: '#3c4043' }}>{tab.title}</div>
-                    <button onClick={() => setFloatingEditorGroup({...floatingEditorGroup, tabs: floatingEditorGroup.tabs.filter(x => x.url !== tab.url)})} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#d93025', fontSize: '14px', padding: '4px' }}>✕</button>
+            </div>
+            <div className="palette-list" style={{ padding: '16px' }}>
+              {playingTabsModal.map(t => (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderBottom: '1px solid var(--border-default)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <img src={t.favIconUrl} style={{ width: '16px', height: '16px' }} />
+                    <div style={{ fontSize: '13px' }}>{t.title}</div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-          
-          <div style={{ padding: '16px 20px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#fafbfc', paddingRight: '32px' }}>
-            <button onClick={() => setFloatingEditorGroup(null)} style={btnStyle('#fff', '#5f6368', '1px solid #dadce0')}>Cancel</button>
-            <button onClick={handleSaveFloatingGroup} style={btnStyle('#1a73e8', '#fff', 'none')}>Save Group</button>
-          </div>
-        </div>
-      )}
-      
-      {/* HEADER */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <div>
-          <h1 style={{ margin: '0 0 4px 0', fontSize: '28px', fontWeight: 700 }}>GenTabs</h1>
-          <p style={{ color: '#5f6368', margin: 0, fontSize: '14px' }}>Dashboard & Workspace Manager</p>
-        </div>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px' }}>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            {saveStatus && <span style={{ fontSize: '13px', color: '#1a73e8', fontWeight: 600 }}>{saveStatus}</span>}
-            <button onClick={() => handleDashboardSave("SAVE_CURRENT_SESSION")} style={btnStyle('#fff', '#1a73e8', '1px solid #dadce0')}>+ Save Current</button>
-            <button onClick={() => handleDashboardSave("SAVE_ALL_SESSION")} style={btnStyle('#1a73e8', '#fff', 'none')}>+ Save All</button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #dadce0', fontSize: '14px', outline: 'none', backgroundColor: '#fff', cursor: 'pointer' }}>
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-              <option value="most_tabs">Most Tabs</option>
-              <option value="least_tabs">Least Tabs</option>
-            </select>
-            <div style={{ position: 'relative', width: '280px' }}>
-              <input type="text" placeholder="Search tabs, groups, domains..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '10px 16px 10px 36px', borderRadius: '8px', border: '1px solid #dadce0', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
-              <span style={{ position: 'absolute', left: '12px', top: '9px', color: '#80868b', fontSize: '16px' }}>🔍</span>
+                  <button className="card-btn primary" onClick={() => { if(t.id) chrome.tabs.update(t.id, { active: true }); }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    Go
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
-
-      {/* QUICK ACTIONS GRID */}
-      <div style={{ marginBottom: '40px' }}>
-        <h2 style={{ fontSize: '14px', color: '#5f6368', fontWeight: 700, marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Quick Actions</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-          {quickActions.map(qa => (
-            <button 
-              key={qa.title} 
-              onClick={qa.action} 
-              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', backgroundColor: '#fff', border: '1px solid #e8eaed', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', textAlign: 'left' }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.05)'; e.currentTarget.style.borderColor = '#dadce0'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)'; e.currentTarget.style.borderColor = '#e8eaed'; }}
-            >
-              <div style={{ fontSize: '20px', backgroundColor: '#f1f3f4', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{qa.icon}</div>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: '#3c4043' }}>{qa.title}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      
-      {/* LATEST SESSION SECTION */}
-      {latestSessionToShow && (
-        <div style={{ marginBottom: '40px' }}>
-          <h2 style={{ fontSize: '20px', paddingBottom: '12px', marginBottom: '16px', color: '#202124', fontWeight: 600, borderBottom: '1px solid #f1f3f4' }}>Latest Session</h2>
-          {renderSessionGroup(latestSessionToShow)}
-        </div>
       )}
 
-      {/* CUSTOM GROUPS SECTION */}
-      <div style={{ marginBottom: '40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '12px', marginBottom: '16px', borderBottom: '1px solid #f1f3f4' }}>
-          <h2 style={{ fontSize: '20px', color: '#202124', fontWeight: 600, margin: 0 }}>Custom Groups</h2>
-          <button onClick={handleOpenCreateEditor} style={btnStyle('#1a73e8', '#fff', 'none')}>+ Create Group</button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {filteredCustomGroups.length === 0 ? (
-            <p style={{ color: '#80868b', fontSize: '14px', marginTop: 0 }}>No custom groups match.</p>
-          ) : (
-            filteredCustomGroups.map(group => {
-              const isExpanded = expandedCustom[group.id];
-              const isDragOver = dragOverGroupId === group.id;
-
-              return (
-                <div key={group.id} onDragOver={e => handleDragOver(e, group.id)} onDragLeave={handleDragLeave} onDrop={e => handleDrop(e, group)} style={{ border: isDragOver ? '2px dashed #1a73e8' : '1px solid #dadce0', borderRadius: '12px', backgroundColor: isDragOver ? '#f4f8fe' : '#fff', transition: 'all 0.2s ease', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div onClick={() => toggleCustom(group.id)} style={{ flex: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '14px', color: '#5f6368', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▶</span>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {group.name}
-                        {group.isPinned && <span title="Pinned" style={{color: '#fbbc04'}}>⭐</span>}
-                      </h3>
-                      <span style={{ backgroundColor: '#f1f3f4', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', color: '#5f6368', fontWeight: 600 }}>{group.tabs.length} tabs</span>
-                      {!isExpanded && group.tabs.length > 0 && <div style={{ marginLeft: '16px' }}>{renderFaviconStrip(group.tabs)}</div>}
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={(e) => handleTogglePin(group, e)} style={iconBtnStyle} title={group.isPinned ? "Unpin" : "Pin"}>{group.isPinned ? '★' : '☆'}</button>
-                      <button onClick={(e) => handleEditCustomGroup(group, e)} style={iconBtnStyle} title="Edit Group">⚙️</button>
-                      <button onClick={() => handleOpenTabs(group)} style={btnStyle('#fff', '#1a73e8', '1px solid #dadce0')}>Open Tabs</button>
-                      <button onClick={() => handleDeleteCustom(group.id)} style={btnStyle('#fff', '#d93025', '1px solid #dadce0')}>Delete</button>
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div style={{ padding: '0 20px 20px 20px', backgroundColor: '#fafbfc', borderTop: '1px solid #f1f3f4', paddingTop: '16px' }}>
-                      {group.tabs.length === 0 ? (
-                        <div style={{ padding: '24px', textAlign: 'center', border: '2px dashed #dadce0', borderRadius: '8px', color: '#80868b', fontSize: '14px', backgroundColor: '#fff' }}>Click ⚙️ Edit to add tabs using Domain grouping, or drag tabs here!</div>
-                      ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-                          {group.tabs.map(tab => renderTabCard(tab, false, group.id, true))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* ALL SESSIONS SECTION */}
-      {remainingSessionsToShow.length > 0 && (
-        <div>
-          <h2 style={{ fontSize: '20px', paddingBottom: '12px', marginBottom: '16px', color: '#202124', fontWeight: 600, borderBottom: '1px solid #f1f3f4' }}>
-            All Sessions
-          </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {remainingSessionsToShow.map(session => renderSessionGroup(session))}
-          </div>
-        </div>
-      )}
-
-      {/* BULK ACTION BAR */}
-      {selectedTabs.size > 0 && (
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', borderTop: '1px solid #dadce0', boxShadow: '0 -4px 12px rgba(0,0,0,0.08)', padding: '16px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <div style={{ fontWeight: 600, color: '#1a73e8', fontSize: '15px' }}>
-              {selectedTabs.size} tab{selectedTabs.size > 1 ? 's' : ''} selected
+      {showCommandPalette && (
+        <div className="palette-overlay" onClick={() => setShowCommandPalette(false)}>
+          <div className="palette-content" onClick={e => e.stopPropagation()}>
+            <div className="palette-input-wrap">
+              <input 
+                ref={commandInputRef} 
+                className="palette-input" 
+                value={commandQuery} 
+                onChange={e => { setCommandQuery(e.target.value); setCommandSelectedIndex(0); }} 
+                onKeyDown={handleCommandKeyDown}
+                placeholder="Search tabs..." 
+                autoFocus 
+              />
             </div>
-            <button onClick={() => setSelectedTabs(new Set())} style={{ background: 'none', border: 'none', color: '#5f6368', cursor: 'pointer', textDecoration: 'underline', fontSize: '13px' }}>Clear</button>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <select onChange={handleBulkMoveToGroup} value="" style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #dadce0', backgroundColor: '#f8f9fa', cursor: 'pointer', fontSize: '14px', outline: 'none' }}>
-              <option value="" disabled>Copy to Group...</option>
-              {customGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-            <button onClick={handleBulkRemove} style={btnStyle('#fff', '#d93025', '1px solid #dadce0')}>Remove from Custom Groups</button>
-            <button onClick={handleBulkOpen} style={btnStyle('#1a73e8', '#fff', 'none')}>Open Selected</button>
+            <div className="palette-list">
+              {commandResults.map((r, idx) => (
+                <div key={idx} className={`palette-item ${commandSelectedIndex === idx ? 'active' : ''}`} onClick={r.action}>{r.label}</div>
+              ))}
+            </div>
           </div>
         </div>
       )}
-
-    </div>
+    </>
   );
 };

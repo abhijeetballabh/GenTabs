@@ -3,4 +3,7 @@ export interface Tab {
   title: string;
   favicon: string;
   domain: string;
+  lastAccessed?: number;
+  note?: string;
+  readTime?: number;
 }

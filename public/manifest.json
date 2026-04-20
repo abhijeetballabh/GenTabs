@@ -5,7 +5,12 @@
   "description": "Sweep open tabs into a saved group and close them.",
   "permissions": [
     "tabs",
-    "storage"
+    "storage",
+    "sessions",
+    "alarms",
+    "notifications",
+    "scripting",
+    "tabGroups"
   ],
   "background": {
     "service_worker": "background.js",

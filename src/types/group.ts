@@ -7,4 +7,11 @@ export interface Group {
   tabs: Tab[];
   windowScope?: 'current' | 'all';
   isPinned?: boolean;
+  customName?: boolean;
+  emoji?: string;
+  color?: string;
+  schedule?: {
+    onLaunch?: boolean;
+    dailyTime?: string;
+  };
 }

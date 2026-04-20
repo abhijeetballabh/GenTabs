@@ -42,6 +42,7 @@ export const mapChromeTabToTab = (tab: chrome.tabs.Tab): Tab => {
     url,
     title,
     favicon,
-    domain
+    domain,
+    lastAccessed: tab.lastAccessed
   };
 };

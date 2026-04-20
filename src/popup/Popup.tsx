@@ -1,21 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export const Popup: React.FC = () => {
   const [status, setStatus] = useState<string>('');
 
+  useEffect(() => {
+    chrome.storage.local.get(['theme'], (result) => {
+      if (result.theme) {
+        const savedTheme = result.theme as 'light' | 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      }
+    });
+  }, []);
+
   const handleSaveSession = (type: string) => {
     setStatus('Saving...');
     chrome.runtime.sendMessage({ type }, (response: any) => {
-      console.log("Save response:", response);
       if (chrome.runtime.lastError) {
-        setStatus('Error: ' + chrome.runtime.lastError.message);
+        setStatus('Error');
         return;
       }
       if (response?.success) {
         setStatus('Saved!');
         setTimeout(() => setStatus(''), 2000);
       } else {
-        setStatus('Error: ' + (response?.error || 'Unknown'));
+        setStatus('Error');
       }
     });
   };
@@ -25,44 +33,31 @@ export const Popup: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '20px', minWidth: '220px', textAlign: 'center', fontFamily: 'sans-serif' }}>
-      <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#202124' }}>GenTabs</h2>
-      
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {status && <div style={{ fontSize: '13px', fontWeight: 'bold', color: status.includes('Error') ? '#d93025' : '#1e8e3e', marginBottom: '4px' }}>{status}</div>}
-        
-        <button 
-          onClick={() => handleSaveSession("SAVE_CURRENT_SESSION")}
-          style={btnStyle('#4285f4', '#fff')}
-        >
-          Save Current Window
-        </button>
+    <div className="popup-container">
+      <div className="popup-header">
+        <div className="logo">
+          <div className="logo-icon">G</div>
+          <div className="logo-text">GenTabs</div>
+        </div>
+        {status && <div className={`status-tag ${status.includes('Error') ? 'error' : 'success'}`}>{status}</div>}
+      </div>
 
-        <button 
-          onClick={() => handleSaveSession("SAVE_ALL_SESSION")}
-          style={btnStyle('#34a853', '#fff')}
-        >
+      <div className="popup-actions">
+        <button className="card-btn primary" onClick={() => handleSaveSession("SAVE_CURRENT_SESSION")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save Window
+        </button>
+        
+        <button className="card-btn" onClick={() => handleSaveSession("SAVE_ALL_SESSION")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
           Save All Windows
         </button>
-        
-        <button 
-          onClick={handleOpenDashboard}
-          style={btnStyle('#fff', '#444', '1px solid #ddd')}
-        >
+
+        <button className="card-btn" onClick={handleOpenDashboard}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
           Open Dashboard
         </button>
       </div>
     </div>
   );
 };
-
-const btnStyle = (bg: string, color: string, border: string = 'none') => ({
-  padding: '10px 20px',
-  backgroundColor: bg,
-  color,
-  border,
-  borderRadius: '4px',
-  cursor: 'pointer',
-  fontWeight: 'bold' as const,
-  transition: 'opacity 0.2s',
-});
