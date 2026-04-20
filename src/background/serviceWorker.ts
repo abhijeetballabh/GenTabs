@@ -3,12 +3,12 @@ import { filterTabs, prepareTabs } from '../core/sweep';
 import { createGroup } from '../core/group';
 import { saveGroup } from '../api/storage.api';
 
-const handleSaveSession = async () => {
+const handleSaveSession = async (scope: 'current' | 'all') => {
   try {
-    console.log('1. get tabs (current window only)');
-    const allTabs = await getAllTabs();
+    console.log(`1. get tabs (${scope} windows)`);
+    const allTabs = await getAllTabs(scope === 'current');
     if (!allTabs || allTabs.length === 0) {
-      console.log('No tabs found in current window.');
+      console.log('No tabs found.');
       return;
     }
 
@@ -23,7 +23,7 @@ const handleSaveSession = async () => {
     const customTabs = prepareTabs(tabsToSweep);
 
     console.log('4. create group');
-    const newGroup = createGroup(customTabs);
+    const newGroup = createGroup(customTabs, scope);
 
     console.log('5. save group');
     await saveGroup(newGroup);
@@ -31,13 +31,16 @@ const handleSaveSession = async () => {
     console.log('6. DO NOT close tabs - operation complete.');
   } catch (error) {
     console.error('Error during save session operation:', error);
+    throw error;
   }
 };
 
 chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
-  if (message?.type === 'SAVE_SESSION') {
-    console.log('Received SAVE_SESSION message');
-    handleSaveSession()
+  if (message?.type === 'SAVE_CURRENT_SESSION' || message?.type === 'SAVE_ALL_SESSION') {
+    console.log(`Received ${message.type} message`);
+    const scope = message.type === 'SAVE_CURRENT_SESSION' ? 'current' : 'all';
+    
+    handleSaveSession(scope)
       .then(() => sendResponse({ success: true }))
       .catch((err) => {
         console.error('Save session failed:', err);

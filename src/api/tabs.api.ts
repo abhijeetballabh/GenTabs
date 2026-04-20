@@ -1,8 +1,9 @@
 import type { Tab } from '../types/tab';
 
-export const getAllTabs = async (): Promise<chrome.tabs.Tab[]> => {
+export const getAllTabs = async (currentWindowOnly: boolean = true): Promise<chrome.tabs.Tab[]> => {
   try {
-    return await chrome.tabs.query({ currentWindow: true });
+    const query = currentWindowOnly ? { currentWindow: true } : {};
+    return await chrome.tabs.query(query);
   } catch (error) {
     console.error('Error fetching tabs:', error);
     return [];

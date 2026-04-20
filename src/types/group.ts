@@ -5,4 +5,6 @@ export interface Group {
   name: string;
   createdAt: number;
   tabs: Tab[];
+  windowScope?: 'current' | 'all';
+  isPinned?: boolean;
 }
