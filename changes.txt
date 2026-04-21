@@ -1,0 +1,15 @@
+# GenTabs Master Changelog
+
+## Phase 1: Core Modernization & UI/UX Foundations
+- **Tailwind CSS v4 Integration:** Configured Tailwind Vite plugin to support modern utility classes directly alongside existing custom styles.
+- **Data Integrity (Zod):** Implemented strict schema mapping (`TabSchema`, `GroupSchema`) to prevent corrupted legacy `chrome.storage.local` payloads from crashing the React UI.
+- **Glassmorphism Modals:** Overhauled `.palette-overlay` in `index.css` applying `backdrop-filter: blur(16px) saturate(160%)` for premium visual frosted glass backgrounds.
+- **Framer Motion Setup:** Wrapped `Dashboard.tsx` Accordion logics (`renderCustomGroup`, `renderSessionGroup`) in `<AnimatePresence>` to achieve smooth visual DOM expansions.
+- **Data Cascades:** Engineered staggered layout mount animations for `TabCards` when grids expand.
+
+## Phase 2: The "Awwwards" Aesthetic & Bento Layout
+*(Completed)*
+- **Three.js Interactive Background:** Implemented `@react-three/fiber` particle mesh for subtle cursor tracking.
+- **3D Hover Card Tilting:** Utilized `useMotionValue` and `useTransform` to make Group Cards spatially track mouse coordinates.
+- **Horizontal Time Machine View:** Restructured "All Sessions" column into an overflow-x scrolling timeline with snap points.
+- **Bento Grid Layout:** Upgraded Custom Workspaces to dynamically spawn in a CSS layout grid (`col-span-2` for large groups).

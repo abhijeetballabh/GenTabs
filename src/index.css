@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   /* === LIGHT MODE === */
   --bg-base:        #F4F3EF;   /* warm off-white — not pure white, feels premium */
@@ -51,41 +53,42 @@
 
 /* === DARK MODE === */
 [data-theme="dark"] {
-  --bg-base:        #0C0C0B;   /* near-black with a warm undertone */
-  --bg-surface:     #161614;   /* cards */
-  --bg-elevated:    #1E1E1B;   /* hover, elevated panels */
-  --bg-overlay:     rgba(12, 12, 11, 0.88);
+  --bg-base:        #07070A;   /* deep space black */
+  --bg-surface:     #111118;   /* cards — slightly purple-tinted */
+  --bg-elevated:    #1A1A24;   /* hover, elevated panels */
+  --bg-overlay:     rgba(7, 7, 10, 0.92);
 
-  --border-subtle:  rgba(255, 255, 255, 0.05);
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong:  rgba(255, 255, 255, 0.14);
+  --border-subtle:  rgba(148, 163, 255, 0.07);
+  --border-default: rgba(148, 163, 255, 0.14);
+  --border-strong:  rgba(148, 163, 255, 0.24);
 
-  --text-primary:   #F0EFEB;
-  --text-secondary: #A8A79F;
-  --text-tertiary:  #5C5B55;
+  --text-primary:   #F4F4FF;      /* near-white with cool undertone */
+  --text-secondary: #C4C4D8;      /* clearly readable */
+  --text-tertiary:  #8888A8;      /* was #5C5B55 — much more visible */
   --text-inverse:   #0F0F0E;
 
-  --accent-primary: #3B82F6;
-  --accent-hover:   #60A5FA;
-  --accent-soft:    rgba(59, 130, 246, 0.12);
-  --accent-border:  rgba(59, 130, 246, 0.30);
+  --accent-primary: #60A5FA;      /* brighter blue */
+  --accent-hover:   #93C5FD;
+  --accent-soft:    rgba(96, 165, 250, 0.15);
+  --accent-border:  rgba(96, 165, 250, 0.40);
 
-  --success:        #10B981;
-  --success-soft:   rgba(16, 185, 129, 0.12);
-  --warning:        #F59E0B;
-  --warning-soft:   rgba(245, 158, 11, 0.12);
-  --danger:         #EF4444;
-  --danger-soft:    rgba(239, 68, 68, 0.12);
+  --success:        #34D399;
+  --success-soft:   rgba(52, 211, 153, 0.14);
+  --warning:        #FBBF24;
+  --warning-soft:   rgba(251, 191, 36, 0.14);
+  --danger:         #F87171;
+  --danger-soft:    rgba(248, 113, 113, 0.14);
 
-  --age-old-bg:     rgba(245, 158, 11, 0.12);
-  --age-old-text:   #FCD34D;
-  --age-stale-bg:   rgba(239, 68, 68, 0.12);
+  --age-old-bg:     rgba(251, 191, 36, 0.15);
+  --age-old-text:   #FDE68A;
+  --age-stale-bg:   rgba(248, 113, 113, 0.15);
   --age-stale-text: #FCA5A5;
 
-  --shadow-sm:  0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md:  0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg:  0 20px 40px rgba(0,0,0,0.5);
-  --shadow-focus: 0 0 0 3px rgba(59, 130, 246, 0.35);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.6), 0 0 0 1px rgba(148,163,255,0.06);
+  --shadow-lg:  0 20px 50px rgba(0,0,0,0.7), 0 0 0 1px rgba(148,163,255,0.08);
+  --shadow-xl:  0 30px 80px rgba(0,0,0,0.8), 0 0 40px rgba(96,165,250,0.06);
+  --shadow-focus: 0 0 0 3px rgba(96, 165, 250, 0.40);
 }
 
 *, *::before, *::after {
@@ -95,7 +98,7 @@
 }
 
 html {
-  font-size: 16px;
+  font-size: 18px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -138,7 +141,92 @@ body {
 }
 
 [data-theme="dark"] .bg-grid {
-  opacity: 0.6;
+  opacity: 0.4;
+  background-image: radial-gradient(circle, rgba(148, 163, 255, 0.15) 1px, transparent 1px);
+}
+
+/* ── Dark Mode Enhanced UI ─────────────────────── */
+
+[data-theme="dark"] .section-title {
+  color: #9898C0;
+  text-shadow: 0 0 20px rgba(96, 165, 250, 0.3);
+  letter-spacing: 0.12em;
+}
+
+[data-theme="dark"] .action-card {
+  background: #111118;
+  border-color: rgba(148, 163, 255, 0.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.4);
+}
+[data-theme="dark"] .action-card:hover {
+  border-color: rgba(96, 165, 250, 0.40);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(96,165,250,0.2), inset 0 1px 0 rgba(255,255,255,0.06);
+  background: #13131e;
+}
+[data-theme="dark"] .action-label {
+  color: #D4D4F0;
+  font-weight: 600;
+}
+[data-theme="dark"] .action-icon {
+  font-size: 22px;
+  filter: drop-shadow(0 0 6px rgba(96,165,250,0.4));
+}
+
+[data-theme="dark"] .group-card,
+[data-theme="dark"] .session-card {
+  background: #111118;
+  border-color: rgba(148, 163, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.4);
+}
+[data-theme="dark"] .group-card:hover,
+[data-theme="dark"] .session-card:hover {
+  border-color: rgba(96, 165, 250, 0.35);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(96,165,250,0.15), inset 0 1px 0 rgba(255,255,255,0.05);
+  background: #13131e;
+}
+[data-theme="dark"] .card-header:hover {
+  background: rgba(96, 165, 250, 0.05);
+}
+
+[data-theme="dark"] .tab-row {
+  border-color: rgba(148, 163, 255, 0.07);
+}
+[data-theme="dark"] .tab-row:hover {
+  background: rgba(96, 165, 250, 0.06);
+  border-color: rgba(96, 165, 250, 0.18);
+}
+
+[data-theme="dark"] .top-bar {
+  background: rgba(7, 7, 10, 0.85);
+  border-bottom: 1px solid rgba(148, 163, 255, 0.10);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+[data-theme="dark"] .search-input {
+  color: #E0E0F8;
+}
+[data-theme="dark"] .search-input::placeholder {
+  color: #6060A0;
+}
+
+[data-theme="dark"] .card-btn.primary {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  box-shadow: 0 2px 12px rgba(96, 165, 250, 0.30);
+}
+[data-theme="dark"] .card-btn.primary:hover {
+  background: linear-gradient(135deg, #60a5fa, #818cf8);
+  box-shadow: 0 4px 20px rgba(96, 165, 250, 0.45);
+}
+
+[data-theme="dark"] .sort-select {
+  background: #1a1a24;
+  color: #C4C4D8;
+  border-color: rgba(148, 163, 255, 0.18);
+}
+
+[data-theme="dark"] .group-emoji {
+  filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.5));
 }
 
 @keyframes gridShift {
@@ -436,7 +524,7 @@ body {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: visible;
   transition: box-shadow var(--transition-normal), border-color var(--transition-normal);
   margin-bottom: 8px;
 }
@@ -596,6 +684,9 @@ body {
 }
 
 /* Tab Rows (Inside Expanded Cards) */
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
 .card-body {
   border-top: 1px solid var(--border-subtle);
   /* Animate open/close */
@@ -616,11 +707,36 @@ body {
   padding: 8px;
 }
 
-/* Tab grid — 3 columns */
+/* Tab grid — responsive columns */
 .tab-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 6px;
+}
+
+/* Horizontal Card Tracking Scrollbars */
+.card-track {
+  display: flex;
+  flex-direction: row;
+  gap: 24px;
+  overflow-x: auto;
+  padding-bottom: 20px;
+  scroll-snap-type: x mandatory;
+}
+.card-track::-webkit-scrollbar {
+  height: 12px;
+}
+.card-track::-webkit-scrollbar-track {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-full);
+}
+.card-track::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+  border: 3px solid var(--bg-elevated);
+}
+.card-track::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
 }
 
 .tab-row {
@@ -752,19 +868,21 @@ body {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding-top: 15vh;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--transition-normal);
+  transition: all var(--transition-normal);
 }
 .palette-overlay.open {
   opacity: 1;
   pointer-events: all;
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .palette-modal {
@@ -1329,14 +1447,12 @@ body.popup-body {
 
 /* On smaller screens */
 @media (max-width: 900px) {
-  .tab-grid { grid-template-columns: repeat(2, 1fr); }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-layout { padding: 20px 16px 60px; }
   .top-bar { padding: 0 16px; }
 }
 
 @media (max-width: 640px) {
-  .tab-grid { grid-template-columns: 1fr; }
   .quick-actions { grid-template-columns: repeat(2, 1fr); }
   .cmd-k-hint { display: none; }
 }

@@ -1,17 +1,20 @@
-import type { Tab } from './tab';
+import { z } from 'zod';
+import { TabSchema } from './tab';
 
-export interface Group {
-  id: string;
-  name: string;
-  createdAt: number;
-  tabs: Tab[];
-  windowScope?: 'current' | 'all';
-  isPinned?: boolean;
-  customName?: boolean;
-  emoji?: string;
-  color?: string;
-  schedule?: {
-    onLaunch?: boolean;
-    dailyTime?: string;
-  };
-}
+export const GroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.number(),
+  tabs: z.array(TabSchema),
+  windowScope: z.enum(['current', 'all']).optional(),
+  isPinned: z.boolean().optional(),
+  customName: z.boolean().optional(),
+  emoji: z.string().optional(),
+  color: z.string().optional(),
+  schedule: z.object({
+    onLaunch: z.boolean().optional(),
+    dailyTime: z.string().optional(),
+  }).optional(),
+});
+
+export type Group = z.infer<typeof GroupSchema>;

@@ -1,11 +1,47 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { DragEvent } from 'react';
-import { 
-  getAllGroups, 
-  deleteGroup, 
-  getCustomGroups, 
-  saveCustomGroup, 
-  updateCustomGroup, 
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { MatrixBackground } from './components/MatrixBackground';
+
+const TiltCard = ({ children, className, style, ...rest }: any) => {
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const mouseXSpring = useSpring(x, { stiffness: 150, damping: 15 });
+  const mouseYSpring = useSpring(y, { stiffness: 150, damping: 15 });
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
+
+  return (
+    <motion.div
+      style={{ ...style, perspective: 1200, rotateX, rotateY, transformStyle: "preserve-3d" }}
+      className={className}
+      onMouseMove={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const xPct = mouseX / width - 0.5;
+        const yPct = mouseY / height - 0.5;
+        x.set(xPct);
+        y.set(yPct);
+      }}
+      onMouseLeave={() => { x.set(0); y.set(0); }}
+      {...rest}
+    >
+      <div style={{ transform: "translateZ(30px)", height: '100%', width: '100%', borderRadius: 'inherit' }}>
+        {children}
+      </div>
+    </motion.div>
+  );
+};
+
+import {
+  getAllGroups,
+  deleteGroup,
+  getCustomGroups,
+  saveCustomGroup,
+  updateCustomGroup,
   deleteCustomGroup,
   updateGroup
 } from '../api/storage.api';
@@ -16,11 +52,18 @@ import { getAnalytics } from '../utils/analytics';
 import type { AnalyticsData } from '../utils/analytics';
 
 export const Dashboard: React.FC = () => {
+  const [showSplash, setShowSplash] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setShowSplash(false), 1400);
+    return () => clearTimeout(t);
+  }, []);
+
   const [sessions, setSessions] = useState<Group[]>([]);
   const [customGroups, setCustomGroups] = useState<Group[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'most_tabs' | 'least_tabs'>('newest');
+
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({});
@@ -40,7 +83,7 @@ export const Dashboard: React.FC = () => {
   const [panelSize, setPanelSize] = useState({ w: 480, h: 520 });
   const [isDraggingPanel, setIsDraggingPanel] = useState(false);
   const [isResizingPanel, setIsResizingPanel] = useState<'right' | 'bottom' | 'bottom-right' | null>(null);
-  
+
   const dragStartPos = useRef({ x: 0, y: 0 });
   const resizeStartPos = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
@@ -55,7 +98,7 @@ export const Dashboard: React.FC = () => {
     return () => document.removeEventListener('click', closeDropdown);
   }, []);
 
-  const EMOJIS = ['🧑‍💻','📚','🛒','🎨','💼','🔬','🎮','✈️','💰','📝','🏠','🔧','⭐','🔥','🚀','💡','🎯','📌','📅','📊','🎵','🎬','📸','🍔','☕','🌈','🏆','⚡','🌍','❤️'];
+  const EMOJIS = ['🧑‍💻', '📚', '🛒', '🎨', '💼', '🔬', '🎮', '✈️', '💰', '📝', '🏠', '🔧', '⭐', '🔥', '🚀', '💡', '🎯', '📌', '📅', '📊', '🎵', '🎬', '📸', '🍔', '☕', '🌈', '🏆', '⚡', '🌍', '❤️'];
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
@@ -130,7 +173,7 @@ export const Dashboard: React.FC = () => {
       if (isDraggingPanel) {
         const newX = e.clientX - dragStartPos.current.x;
         const newY = e.clientY - dragStartPos.current.y;
-        
+
         setPanelPos({
           x: Math.max(0, Math.min(newX, window.innerWidth - panelSize.w)),
           y: Math.max(0, Math.min(newY, window.innerHeight - panelSize.h))
@@ -138,17 +181,17 @@ export const Dashboard: React.FC = () => {
       } else if (isResizingPanel) {
         let newW = resizeStartPos.current.w;
         let newH = resizeStartPos.current.h;
-        
+
         if (isResizingPanel === 'right' || isResizingPanel === 'bottom-right') {
           newW = resizeStartPos.current.w + (e.clientX - resizeStartPos.current.x);
         }
         if (isResizingPanel === 'bottom' || isResizingPanel === 'bottom-right') {
           newH = resizeStartPos.current.h + (e.clientY - resizeStartPos.current.y);
         }
-        
+
         newW = Math.max(350, Math.min(newW, window.innerWidth - panelPos.x));
         newH = Math.max(300, Math.min(newH, window.innerHeight - panelPos.y));
-        
+
         setPanelSize({ w: newW, h: newH });
       }
     };
@@ -157,7 +200,7 @@ export const Dashboard: React.FC = () => {
       setIsDraggingPanel(false);
       setIsResizingPanel(null);
     };
-    
+
     if (isDraggingPanel || isResizingPanel) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
@@ -165,7 +208,7 @@ export const Dashboard: React.FC = () => {
     } else {
       document.body.style.userSelect = '';
     }
-    
+
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -176,14 +219,29 @@ export const Dashboard: React.FC = () => {
   const loadData = async () => {
     try {
       const s = await getAllGroups();
-      setSessions(s); 
+      setSessions(s);
       if (!initialExpandedSet && s.length > 0) {
         const allSorted = [...s].sort((a, b) => b.createdAt - a.createdAt);
         setExpandedSessions({ [allSorted[0].id]: true });
         setInitialExpandedSet(true);
       }
-      const cg = await getCustomGroups();
-      setCustomGroups(cg); 
+      
+      let cg = await getCustomGroups();
+      const seen = new Set();
+      let hasDuplicates = false;
+      cg = cg.map(g => {
+        if (!g.id || seen.has(g.id)) {
+          g.id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString();
+          hasDuplicates = true;
+        }
+        seen.add(g.id);
+        return g;
+      });
+      if (hasDuplicates && chrome?.storage?.local) {
+        chrome.storage.local.set({ gentabs_custom_groups: cg }).catch(() => {});
+      }
+      setCustomGroups(cg);
+      
       const a = await getAnalytics();
       setAnalytics(a);
     } catch (error) {
@@ -232,7 +290,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleRestoreLast = () => {
-    const allSorted = [...sessions].sort((a,b)=>b.createdAt - a.createdAt);
+    const allSorted = [...sessions].sort((a, b) => b.createdAt - a.createdAt);
     if (allSorted.length > 0) {
       handleOpenTabs(allSorted[0]);
       showToast('Restored latest session!', 'success');
@@ -260,12 +318,12 @@ export const Dashboard: React.FC = () => {
         if (!groups[u]) groups[u] = [];
         groups[u].push(t);
       });
-      
+
       const dupes: Record<string, chrome.tabs.Tab[]> = {};
       Object.keys(groups).forEach(k => {
         if (groups[k].length > 1) dupes[k] = groups[k];
       });
-      
+
       const dupeCount = Object.keys(dupes).length;
       if (dupeCount === 0) {
         showToast('No duplicate tabs found.', 'info');
@@ -286,27 +344,52 @@ export const Dashboard: React.FC = () => {
     { icon: '🔊', title: 'Unmute All', action: handleUnmuteAll },
     { icon: '❌', title: 'Close All Tabs', action: handleCloseAll },
     { icon: '🔄', title: 'Restore Latest', action: handleRestoreLast },
-    { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="14" height="14" rx="2"/><rect x="7" y="7" width="14" height="14" rx="2"/></svg>, title: 'Find Dupes', action: handleFindDupes },
+    { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="14" height="14" rx="2" /><rect x="7" y="7" width="14" height="14" rx="2" /></svg>, title: 'Find Dupes', action: handleFindDupes },
   ];
 
-  const handleOpenTabs = (group: Group) => {
+  const handleOpenTabs = (group: Group, mode: 'new-window' | 'current-window' = 'new-window') => {
     try {
       if (!group.tabs || group.tabs.length === 0) return;
       const urls = group.tabs.map(t => t.url).filter(url => !!url);
       if (urls.length === 0) return;
-      chrome.windows.create({ url: urls, focused: true });
+      if (mode === 'new-window') {
+        chrome.windows.create({ url: urls, focused: true });
+      } else {
+        urls.forEach(url => chrome.tabs.create({ url, active: false }));
+      }
     } catch (error) {
       console.error('Failed to open tabs', error);
     }
   };
+
+  const [restoreMenuGroupId, setRestoreMenuGroupId] = useState<string | null>(null);
+  const [restoreMenuPos, setRestoreMenuPos] = useState<{ top: number; right: number } | null>(null);
+
+  const openRestoreMenu = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (restoreMenuGroupId === id) {
+      setRestoreMenuGroupId(null);
+      setRestoreMenuPos(null);
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setRestoreMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setRestoreMenuGroupId(id);
+  };
+
+  useEffect(() => {
+    const close = () => { setRestoreMenuGroupId(null); setRestoreMenuPos(null); };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, []);
 
   const handleDeleteSession = async (id: string) => {
     await deleteGroup(id);
     await loadData();
   };
 
-  const toggleSession = (id: string) => setExpandedSessions(prev => ({...prev, [id]: !prev[id]}));
-  const toggleCustom = (id: string) => setExpandedCustom(prev => ({...prev, [id]: !prev[id]}));
+  const toggleSession = (id: string) => setExpandedSessions(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleCustom = (id: string) => setExpandedCustom(prev => ({ ...prev, [id]: !prev[id] }));
 
   const handleRemoveTab = async (groupId: string, tabUrl: string) => {
     try {
@@ -326,7 +409,7 @@ export const Dashboard: React.FC = () => {
     if (targetGroup.tabs.some(t => t.url === tab.url)) return;
     await updateCustomGroup({ ...targetGroup, tabs: [...targetGroup.tabs, tab] });
     await loadData();
-    setExpandedCustom(prev => ({...prev, [targetGroup.id]: true}));
+    setExpandedCustom(prev => ({ ...prev, [targetGroup.id]: true }));
   };
 
   const handleSaveNote = async (groupId: string, isCustom: boolean, tabUrl: string, note: string) => {
@@ -346,7 +429,7 @@ export const Dashboard: React.FC = () => {
       }
       setAddingNoteToTabId(null);
       await loadData();
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   const handleDeleteCustom = async (id: string) => {
@@ -380,7 +463,7 @@ export const Dashboard: React.FC = () => {
         await updateCustomGroup({ ...group, tabs: newTabs });
       }
     }
-    
+
     const newSet = new Set(selectedTabs);
     selectedTabs.forEach(id => { if (id.includes('|true|')) newSet.delete(id); });
     setSelectedTabs(newSet);
@@ -410,7 +493,7 @@ export const Dashboard: React.FC = () => {
 
     await updateCustomGroup({ ...targetGroup, tabs: uniqueTabs });
     setSelectedTabs(new Set());
-    e.target.value = ""; 
+    e.target.value = "";
     await loadData();
   };
 
@@ -432,20 +515,20 @@ export const Dashboard: React.FC = () => {
         readLater = { id: 'read-later', name: 'Read Later', createdAt: Date.now(), tabs: [], emoji: '🔖', color: '#EAF3DE' };
         await saveCustomGroup(readLater);
       }
-      
+
       if (!readLater.tabs.some(t => t.url === tab.url)) {
         readLater.tabs.push({ ...tab, lastAccessed: Date.now() });
         await updateCustomGroup(readLater);
       }
 
       showToast('Saved to Read Later', 'success');
-      
+
       const openTabs = await chrome.tabs.query({});
       const target = openTabs.find(t => t.url === tab.url);
       if (target && target.id) {
         await chrome.tabs.remove(target.id);
       }
-      
+
       await loadData();
     } catch (e) {
       console.error(e);
@@ -463,7 +546,7 @@ export const Dashboard: React.FC = () => {
       if (idx1 !== -1 && idx2 !== -1) {
         const start = Math.min(idx1, idx2);
         const end = Math.max(idx1, idx2);
-        for(let i=start; i<=end; i++) { if (ids[i]) newSet.add(ids[i]!); }
+        for (let i = start; i <= end; i++) { if (ids[i]) newSet.add(ids[i]!); }
       } else { newSet.add(uniqueId); }
     } else {
       if (newSet.has(uniqueId)) newSet.delete(uniqueId);
@@ -490,7 +573,7 @@ export const Dashboard: React.FC = () => {
     }
     e.dataTransfer.setData('application/json', JSON.stringify(tabsToDrag));
     e.dataTransfer.effectAllowed = 'copy';
-    
+
     if (tabsToDrag.length > 1) {
       const el = document.createElement('div');
       el.textContent = `${tabsToDrag.length} tabs`;
@@ -527,7 +610,7 @@ export const Dashboard: React.FC = () => {
       tabsToAdd.forEach(tab => { if (!uniqueTabs.some(t => t.url === tab.url)) uniqueTabs.push(tab); });
       await updateCustomGroup({ ...targetGroup, tabs: uniqueTabs });
       await loadData();
-      setExpandedCustom(prev => ({...prev, [targetGroup.id]: true}));
+      setExpandedCustom(prev => ({ ...prev, [targetGroup.id]: true }));
     } catch (err) { console.error('Drop failed:', err); }
   };
 
@@ -558,7 +641,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleEditCustomGroup = (group: Group, e: React.MouseEvent) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     openFloatingEditor(group);
   };
 
@@ -583,7 +666,7 @@ export const Dashboard: React.FC = () => {
       const newTabs = [...floatingEditorGroup.tabs];
       tabsToAdd.forEach(t => { if (!newTabs.some(x => x.url === t.url)) newTabs.push(t); });
       setFloatingEditorGroup({ ...floatingEditorGroup, tabs: newTabs });
-    } catch(err) { console.error(err); }
+    } catch (err) { console.error(err); }
   };
 
   const sortAndPinGroups = (groups: Group[], isCustom: boolean) => {
@@ -664,25 +747,25 @@ export const Dashboard: React.FC = () => {
     if (!analytics || !canvasRef.current) return;
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
-    
+
     const w = canvasRef.current.width;
     const h = canvasRef.current.height;
     ctx.clearRect(0, 0, w, h);
-    
-    const entries = Object.entries(analytics.dailyTabCounts).sort((a,b) => a[0].localeCompare(b[0])).slice(-7);
+
+    const entries = Object.entries(analytics.dailyTabCounts).sort((a, b) => a[0].localeCompare(b[0])).slice(-7);
     if (entries.length === 0) return;
-    
+
     const maxVal = Math.max(...entries.map(e => e[1]), 10);
     const padding = 20;
-    const barW = (w - padding*2) / entries.length - 10;
-    
+    const barW = (w - padding * 2) / entries.length - 10;
+
     ctx.fillStyle = '#1a73e8';
     entries.forEach(([date, count], i) => {
       const barH = (count / maxVal) * (h - padding * 2);
       const x = padding + i * (barW + 10);
       const y = h - padding - barH;
       ctx.fillRect(x, y, barW, barH);
-      
+
       ctx.fillStyle = '#5f6368';
       ctx.font = '10px system-ui';
       ctx.fillText(date.slice(-5), x, h - 5);
@@ -707,54 +790,55 @@ export const Dashboard: React.FC = () => {
     return <span className="tab-age stale">{days}d</span>;
   };
 
-  const renderTabCard = (tab: Tab, draggable: boolean, groupId: string, isCustom: boolean) => {
-    const uniqueId = `${groupId}|${isCustom}|${tab.url}`;
+  const renderTabCard = (tab: Tab, idx: number, draggable: boolean, groupId: string, isCustom: boolean) => {
+    const uniqueId = `${groupId}|${isCustom}|${tab.url}|${idx}`;
     const isChecked = selectedTabs.has(uniqueId);
-    
+
     return (
-      <div 
-        className={`tab-row ${isChecked ? 'selected' : ''}`} 
-        data-id={uniqueId} 
-        key={tab.url} 
-        draggable={draggable} 
-        onDragStart={draggable ? (e) => handleDragStart(e, tab, uniqueId) : undefined} 
+      <div
+        className={`tab-row ${isChecked ? 'selected' : ''}`}
+        style={{ position: 'relative' }}
+        data-id={uniqueId}
+        key={`${tab.url}-${idx}`}
+        draggable={draggable}
+        onDragStart={draggable ? (e) => handleDragStart(e, tab, uniqueId) : undefined}
         onClick={(e) => handleTabClick(e, uniqueId)}
       >
-        <input 
-          type="checkbox" 
+        <input
+          type="checkbox"
           className="tab-checkbox"
-          checked={isChecked} 
-          onChange={() => {}} 
+          checked={isChecked}
+          onChange={() => { }}
           onClick={e => e.stopPropagation()}
         />
-        
-        <img 
+
+        <img
           className="tab-favicon"
-          src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}&sz=64`} 
-          alt="" 
+          src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}&sz=64`}
+          alt=""
         />
-        
-        <div className="tab-title">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {tab.title}
-            {tab.note && <div className="tab-note-dot" title={tab.note}></div>}
+
+        <div className="tab-title" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.title}</span>
+            {tab.note && <div className="tab-note-dot" style={{ flexShrink: 0 }} title={tab.note}></div>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{tab.domain}</span>
-            {getTabAgeElement(tab.lastAccessed)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.domain}</span>
+            <div style={{ flexShrink: 0 }}>{getTabAgeElement(tab.lastAccessed)}</div>
           </div>
         </div>
-        
+
         <div className="tab-actions" onClick={e => e.stopPropagation()}>
           <button className="tab-action-btn" onClick={() => chrome.tabs.create({ url: tab.url, active: false })} title="Open Tab">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
           </button>
           <button className="tab-action-btn" onClick={() => navigator.clipboard.writeText(tab.url)} title="Copy URL">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
           </button>
           <div style={{ position: 'relative' }}>
             <button className="tab-action-btn" onClick={() => setActiveDropdownTabId(activeDropdownTabId === uniqueId ? null : uniqueId)} title="Actions">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             </button>
             {activeDropdownTabId === uniqueId && (
               <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 50, padding: '6px', minWidth: '160px' }}>
@@ -762,13 +846,13 @@ export const Dashboard: React.FC = () => {
                 <div className="card-btn" style={{ width: '100%', border: 'none' }} onClick={(e) => { e.stopPropagation(); setAddingNoteToTabId(uniqueId); setNoteText(tab.note || ''); setActiveDropdownTabId(null); }}>Add Note</div>
                 <div className="palette-section-label">Add to Group</div>
                 {customGroups.length === 0 && <div style={{ padding: '6px 8px', fontSize: '11px', color: 'var(--text-tertiary)' }}>No groups</div>}
-                {customGroups.map(g => ( <div key={g.id} className="card-btn" style={{ width: '100%', border: 'none' }} onClick={(e) => { e.stopPropagation(); handleAddTabToGroup(g.id, tab); setActiveDropdownTabId(null); }}>{g.name}</div> ))}
+                {customGroups.map(g => (<div key={g.id} className="card-btn" style={{ width: '100%', border: 'none' }} onClick={(e) => { e.stopPropagation(); handleAddTabToGroup(g.id, tab); setActiveDropdownTabId(null); }}>{g.name}</div>))}
               </div>
             )}
           </div>
           {isCustom && (
             <button className="tab-action-btn" onClick={() => handleRemoveTab(groupId, tab.url)} title="Remove from Group">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
           )}
         </div>
@@ -797,10 +881,10 @@ export const Dashboard: React.FC = () => {
     const isExpanded = expandedSessions[session.id];
     return (
       <div key={session.id} className="session-card">
-        <div className="card-header" onClick={() => toggleSession(session.id)}>
+        <div className="card-header" onClick={() => { setRestoreMenuGroupId(null); toggleSession(session.id); }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
             <div style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s', color: 'var(--text-tertiary)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </div>
             <div>
               {editingSessionId === session.id ? (
@@ -815,66 +899,165 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="card-actions" onClick={e => e.stopPropagation()}>
             <button className="card-btn" onClick={(e) => handleStartRenameSession(session, e)} title="Rename">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
             </button>
-            <button className="card-btn primary" onClick={() => handleOpenTabs(session)}>Restore</button>
+            <div style={{ position: 'relative' }}>
+              <button className="card-btn primary" onClick={(e) => openRestoreMenu(e, session.id)}>Restore ▾</button>
+            </div>
             <button className="card-btn" onClick={() => handleDeleteSession(session.id)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
             </button>
           </div>
         </div>
-        {isExpanded && (
-          <div className="card-body">
-            <div className="tab-grid">
-              {session.tabs.map(tab => renderTabCard(tab, true, session.id, false))}
-            </div>
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <motion.div
+              initial="collapsed"
+              animate="open"
+              exit="collapsed"
+              variants={{
+                open: { opacity: 1, height: 'auto' },
+                collapsed: { opacity: 0, height: 0 }
+              }}
+              transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="card-body" style={{ display: 'block', gridTemplateRows: 'none', borderTop: '1px solid var(--border-subtle)', padding: '8px' }}>
+                <div className="tab-grid">
+                  {session.tabs.map((tab, idx) => (
+                    <motion.div
+                      key={`${tab.url}-${idx}`}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.02, duration: 0.2 }}
+                    >
+                      {renderTabCard(tab, idx, true, session.id, false)}
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   };
 
   if (sessions.length === 0 && customGroups.length === 0 && !searchQuery && !floatingEditorGroup) {
     return (
-      <div className="empty-state">
-        <div className="empty-icon">📂</div>
-        <h2>No sessions saved yet</h2>
-        <p>Start by saving your current tabs to organize your workspace.</p>
-        <button onClick={() => handleDashboardSave("SAVE_CURRENT_SESSION")} className="card-btn primary" style={{ padding: '12px 24px' }}>
-          Save Current Window
-        </button>
-      </div>
+      <>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+          <MatrixBackground />
+        </div>
+        <div style={{ position: 'relative', zIndex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }} style={{ textAlign: 'center', maxWidth: '560px' }}>
+            <motion.div
+              animate={{ y: [0, -12, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ fontSize: '64px', marginBottom: '24px', display: 'block' }}
+            >📂</motion.div>
+            <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 12px', background: 'linear-gradient(135deg, var(--text-primary), var(--accent-primary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Welcome to GenTabs</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '16px', lineHeight: 1.6, marginBottom: '48px' }}>Your intelligent tab manager. Save, organize, and restore your browsing sessions in seconds.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '40px' }}>
+              {[
+                { step: '01', icon: '💾', title: 'Save a Session', desc: 'Click "Save Session" to snapshot all your open tabs instantly.' },
+                { step: '02', icon: '📁', title: 'Create Workspaces', desc: 'Group tabs by project — Work, Research, Shopping, anything.' },
+                { step: '03', icon: '⚡', title: 'Restore Anytime', desc: 'Bring back any session with one click, in a new or current window.' },
+              ].map((item, i) => (
+                <motion.div
+                  key={item.step}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 + i * 0.15, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-default)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '24px 16px',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '11px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)', opacity: 0.6 }}>{item.step}</div>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>{item.icon}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>{item.title}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{item.desc}</div>
+                </motion.div>
+              ))}
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => handleDashboardSave('SAVE_CURRENT_SESSION')}
+              className="card-btn primary"
+              style={{ padding: '14px 36px', fontSize: '15px', fontWeight: 700 }}
+            >
+              💾 Save My Current Tabs
+            </motion.button>
+          </motion.div>
+        </div>
+      </>
     );
   }
   return (
     <>
-      <div className="dashboard-layout">
+      <AnimatePresence>
+        {showSplash && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.05 }}
+            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-base)' }}
+          >
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-primary)' }}>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              style={{ marginTop: '24px', fontSize: '32px', fontWeight: 800, background: 'linear-gradient(135deg, var(--text-primary), var(--accent-primary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
+            >
+              GenTabs
+            </motion.h1>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+        <MatrixBackground />
+      <div className="dashboard-layout" style={{ position: 'relative', zIndex: 1 }}>
         {/* TOP BAR */}
         <header className="top-bar">
-          <div className="logo">
-            <div className="logo-icon">G</div>
-            <div className="logo-text">GenTabs</div>
+          <div className="logo" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '20px', fontWeight: '800', letterSpacing: '-0.5px' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-primary)' }}>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            <span style={{ background: 'linear-gradient(135deg, var(--text-primary), var(--accent-primary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>GenTabs</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div className="search-wrap">
               <div className="search-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               </div>
-              <input 
-                type="text" 
-                className="search-input" 
-                placeholder="Search tabs..." 
-                value={searchQuery} 
-                onChange={e => setSearchQuery(e.target.value)} 
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search tabs..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
               />
             </div>
 
             <button className="tab-action-btn" onClick={toggleTheme} title="Toggle Theme">
               {theme === 'dark' ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
               ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
               )}
             </button>
 
@@ -900,10 +1083,20 @@ export const Dashboard: React.FC = () => {
         {/* LATEST SESSION */}
         {latestSessionToShow && (
           <section style={{ marginBottom: '40px' }}>
-            <div className="section-header">
-              <h2 className="section-title">Latest Session</h2>
+            <div className="section-header"><h2 className="section-title">Latest Session</h2></div>
+            <div style={{
+              borderRadius: 'var(--radius-lg)',
+              background: 'linear-gradient(135deg, rgba(37,99,235,0.08), rgba(139,92,246,0.06))',
+              border: '1px solid rgba(37,99,235,0.25)',
+              boxShadow: '0 0 0 1px rgba(37,99,235,0.1), inset 0 1px 0 rgba(255,255,255,0.06)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #2563eb, #7c3aed, #06b6d4)' }} />
+              <TiltCard>
+                {renderSessionGroup(latestSessionToShow)}
+              </TiltCard>
             </div>
-            {renderSessionGroup(latestSessionToShow)}
           </section>
         )}
 
@@ -921,87 +1114,155 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {filteredCustomGroups.map(group => (
-              <div 
-                key={group.id} 
-                className={`group-card ${dragOverGroupId === group.id ? 'drag-over' : ''}`}
-                onDragOver={e => handleDragOver(e, group.id)} 
-                onDragLeave={handleDragLeave} 
-                onDrop={e => handleDrop(e, group)}
-              >
-                <div className="card-header" onClick={() => toggleCustom(group.id)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                    <div style={{ transform: expandedCustom[group.id] ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s', color: 'var(--text-tertiary)' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gridAutoFlow: 'dense', gap: '20px' }}>
+            {filteredCustomGroups.map((group, globalIdx) => {
+              const uniqueExpansionId = `${group.id}-${globalIdx}`;
+              const isLarge = group.tabs.length > 5;
+              return (
+                <TiltCard
+                  key={uniqueExpansionId}
+                  className={`group-card ${dragOverGroupId === group.id ? 'drag-over' : ''}`}
+                  style={{
+                    gridColumn: isLarge ? 'span 2' : 'span 1',
+                    height: 'max-content',
+                    alignSelf: 'start',
+                    margin: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    borderLeft: group.color ? `3px solid ${group.color}` : '3px solid transparent',
+                    background: group.color ? `color-mix(in srgb, ${group.color} 6%, var(--bg-surface))` : 'var(--bg-surface)',
+                  }}
+                  onDragOver={(e: any) => handleDragOver(e, group.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e: any) => handleDrop(e, group)}
+                >
+                  <div className="card-header" onClick={() => { setRestoreMenuGroupId(null); toggleCustom(uniqueExpansionId); }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                      <div style={{ transform: expandedCustom[uniqueExpansionId] ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s', color: 'var(--text-tertiary)' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                      </div>
+                      <div className="group-emoji">{group.emoji || '📂'}</div>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {group.name} {group.isPinned && <span style={{ color: 'var(--accent-primary)' }}>★</span>}
+                        </h3>
+                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>{group.tabs.length} tabs</div>
+                      </div>
                     </div>
-                    <div className="group-emoji">{group.emoji || '📂'}</div>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {group.name} {group.isPinned && <span style={{ color: 'var(--accent-primary)' }}>★</span>}
-                      </h3>
-                      <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>{group.tabs.length} tabs</div>
+                    <div className="card-actions" onClick={e => e.stopPropagation()}>
+                      <button className="card-btn" onClick={(e) => handleTogglePin(group, e)}>{group.isPinned ? '★' : '☆'}</button>
+                      <button className="card-btn" onClick={(e) => handleEditCustomGroup(group, e)}>Edit</button>
+                      <div style={{ position: 'relative' }}>
+                        <button className="card-btn primary" onClick={(e) => openRestoreMenu(e, uniqueExpansionId)}>Restore ▾</button>
+                      </div>
+                      <button className="card-btn" onClick={() => handleDeleteCustom(group.id)}>Delete</button>
                     </div>
                   </div>
-                  <div className="card-actions" onClick={e => e.stopPropagation()}>
-                    <button className="card-btn" onClick={(e) => handleTogglePin(group, e)}>{group.isPinned ? '★' : '☆'}</button>
-                    <button className="card-btn" onClick={(e) => handleEditCustomGroup(group, e)}>Edit</button>
-                    <button className="card-btn primary" onClick={() => handleOpenTabs(group)}>Restore</button>
-                    <button className="card-btn" onClick={() => handleDeleteCustom(group.id)}>Delete</button>
-                  </div>
-                </div>
-                {expandedCustom[group.id] && (
-                  <div className="card-body">
-                    {group.tabs.length === 0 ? (
-                      <div className="empty-state" style={{ padding: '24px' }}><p>No tabs in this group. Drag tabs here!</p></div>
-                    ) : (
-                      <div className="tab-grid">{group.tabs.map(tab => renderTabCard(tab, false, group.id, true))}</div>
+                  <AnimatePresence initial={false}>
+                    {expandedCustom[uniqueExpansionId] && (
+                      <motion.div
+                        initial="collapsed"
+                        animate="open"
+                        exit="collapsed"
+                        variants={{
+                          open: { opacity: 1, height: 'auto' },
+                          collapsed: { opacity: 0, height: 0 }
+                        }}
+                        transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <div className="card-body" style={{ display: 'block', gridTemplateRows: 'none', borderTop: '1px solid var(--border-subtle)', padding: '8px' }}>
+                          {group.tabs.length === 0 ? (
+                            <div className="empty-state" style={{ padding: '24px' }}><p>No tabs in this group. Drag tabs here!</p></div>
+                          ) : (
+                            <div className="tab-grid">
+                              {group.tabs.map((tab, idx) => (
+                                <motion.div
+                                  key={`${tab.url}-${idx}`}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: idx * 0.02, duration: 0.2 }}
+                                >
+                                  {renderTabCard(tab, idx, false, group.id, true)}
+                                </motion.div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
                     )}
-                  </div>
-                )}
-              </div>
-            ))}
+                  </AnimatePresence>
+                </TiltCard>
+              )
+            })}
           </div>
         </section>
 
         {/* ALL SESSIONS */}
         {remainingSessionsToShow.length > 0 && (
-          <section style={{ marginBottom: '40px' }}>
-            <div className="section-header"><h2 className="section-title">All Sessions</h2></div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>{remainingSessionsToShow.map(session => renderSessionGroup(session))}</div>
+          <section style={{ marginBottom: '60px' }}>
+            <div className="section-header"><h2 className="section-title">Previous Sessions</h2></div>
+            <div className="card-track">
+              {remainingSessionsToShow.map(session => (
+                <div key={session.id} style={{ minWidth: '400px', scrollSnapAlign: 'start', flexShrink: 0 }}>
+                  <TiltCard style={{ height: '100%' }}>
+                    {renderSessionGroup(session)}
+                  </TiltCard>
+                </div>
+              ))}
+            </div>
           </section>
         )}
 
-        {/* INSIGHTS */}
-        <section className="insights-section">
-          <div className="section-header"><h2 className="section-title">Insights & Analytics</h2></div>
-          <div className="insights-grid">
-            <div className="insight-card">
-              <div className="insight-header"><div className="insight-label">Tab Volume (Last 7 Days)</div></div>
-              <div className="insight-body"><canvas ref={canvasRef} width={400} height={180} style={{ width: '100%' }}></canvas></div>
-            </div>
-            <div className="insight-card">
-              <div className="insight-header"><div className="insight-label">Top Domains</div></div>
-              <div className="insight-body">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {analytics && Object.keys(analytics.domainVisits).length > 0 ? (
-                    Object.entries(analytics.domainVisits).sort((a,b) => b[1] - a[1]).slice(0, 5).map(([dom, count], idx) => (
-                      <div key={dom} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ color: 'var(--text-tertiary)', fontWeight: 600, width: '18px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{idx + 1}</span>
-                          <img src={`https://www.google.com/s2/favicons?domain=${dom}&sz=32`} style={{ width: '16px', height: '16px', borderRadius: '2px' }} />
-                          <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{dom}</span>
-                        </div>
-                        <span className="count-badge">{count}</span>
-                      </div>
-                    ))
-                  ) : <div className="empty-state" style={{ padding: '20px 0' }}>Not enough data yet.</div>}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <footer style={{ marginTop: '60px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center', color: 'var(--text-primary)', fontSize: '14px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+          Copyright &copy; 2026 Akshat Vadera , Abhijeet Ballabh. All rights reserved.
+        </footer>
       </div>
+
+
+
+      {/* GLOBAL RESTORE DROPDOWN - fixed position, escapes all overflow:hidden */}
+      {restoreMenuGroupId && restoreMenuPos && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: restoreMenuPos.top,
+            right: restoreMenuPos.right,
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-xl)',
+            zIndex: 999998,
+            minWidth: '210px',
+            overflow: 'hidden'
+          }}
+        >
+          <div
+            className="card-btn"
+            style={{ width: '100%', border: 'none', borderRadius: 0, padding: '11px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}
+            onClick={() => {
+              const group = [...sessions, ...customGroups].find(g => g.id === restoreMenuGroupId || `${g.id}-0` === restoreMenuGroupId || restoreMenuGroupId.startsWith(g.id));
+              if (group) handleOpenTabs(group, 'new-window');
+              setRestoreMenuGroupId(null); setRestoreMenuPos(null);
+            }}
+          >
+            🪟 <span>Open in New Window</span>
+          </div>
+          <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+          <div
+            className="card-btn"
+            style={{ width: '100%', border: 'none', borderRadius: 0, padding: '11px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}
+            onClick={() => {
+              const group = [...sessions, ...customGroups].find(g => g.id === restoreMenuGroupId || `${g.id}-0` === restoreMenuGroupId || restoreMenuGroupId.startsWith(g.id));
+              if (group) handleOpenTabs(group, 'current-window');
+              setRestoreMenuGroupId(null); setRestoreMenuPos(null);
+            }}
+          >
+            📑 <span>Open in This Window</span>
+          </div>
+        </div>
+      )}
 
       {/* FLOATING EDITOR */}
       {floatingEditorGroup && (
@@ -1009,28 +1270,28 @@ export const Dashboard: React.FC = () => {
           <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('right'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', right: 0, top: 0, bottom: '15px', width: '6px', cursor: 'ew-resize', zIndex: 10 }} />
           <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('bottom'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', bottom: 0, left: 0, right: '15px', height: '6px', cursor: 'ns-resize', zIndex: 10 }} />
           <div onMouseDown={(e) => { e.preventDefault(); setIsResizingPanel('bottom-right'); resizeStartPos.current = { x: e.clientX, y: e.clientY, w: panelSize.w, h: panelSize.h }; }} style={{ position: 'absolute', bottom: 0, right: 0, width: '15px', height: '15px', cursor: 'nwse-resize', zIndex: 11, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: '4px' }}>
-            <svg width="8" height="8" viewBox="0 0 10 10" style={{ fill: 'var(--border-default)' }}><path d="M 8 10 L 10 10 L 10 8 Z M 4 10 L 10 4 L 10 6 L 6 10 Z M 0 10 L 10 0 L 10 2 L 2 10 Z"/></svg>
+            <svg width="8" height="8" viewBox="0 0 10 10" style={{ fill: 'var(--border-default)' }}><path d="M 8 10 L 10 10 L 10 8 Z M 4 10 L 10 4 L 10 6 L 6 10 Z M 0 10 L 10 0 L 10 2 L 2 10 Z" /></svg>
           </div>
           <div className="panel-header" onMouseDown={handlePanelDragStart}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
               <button className="tab-action-btn" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>{floatingEditorGroup.emoji || '📂'}</button>
               {showEmojiPicker && (
                 <div style={{ position: 'absolute', top: '100%', left: '20px', width: '220px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', zIndex: 100, boxShadow: 'var(--shadow-lg)' }}>
-                  {EMOJIS.map(e => <div key={e} onClick={() => { setFloatingEditorGroup({...floatingEditorGroup, emoji: e}); setShowEmojiPicker(false); }} style={{ cursor: 'pointer', textAlign: 'center', padding: '6px' }}>{e}</div>)}
+                  {EMOJIS.map(e => <div key={e} onClick={() => { setFloatingEditorGroup({ ...floatingEditorGroup, emoji: e }); setShowEmojiPicker(false); }} style={{ cursor: 'pointer', textAlign: 'center', padding: '6px' }}>{e}</div>)}
                 </div>
               )}
-              <input className="palette-input" style={{ border: 'none', background: 'transparent' }} value={floatingEditorGroup.name} onChange={e => setFloatingEditorGroup({...floatingEditorGroup, name: e.target.value})} onMouseDown={e => e.stopPropagation()} placeholder="Workspace Name" />
+              <input className="palette-input" style={{ border: 'none', background: 'transparent' }} value={floatingEditorGroup.name} onChange={e => setFloatingEditorGroup({ ...floatingEditorGroup, name: e.target.value })} onMouseDown={e => e.stopPropagation()} placeholder="Workspace Name" />
             </div>
             <button className="tab-action-btn" onClick={() => setFloatingEditorGroup(null)} onMouseDown={e => e.stopPropagation()}>×</button>
           </div>
           <div className="panel-body" onDragOver={e => { e.preventDefault(); setDragOverEditor(true); }} onDragLeave={() => setDragOverEditor(false)} onDrop={handleDropToEditor} style={{ background: dragOverEditor ? 'var(--bg-base)' : 'transparent' }}>
             {floatingEditorGroup.tabs.length === 0 ? <div className="empty-state">Drag tabs here</div> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {floatingEditorGroup.tabs.map(tab => (
-                  <div key={tab.url} className="tab-row" style={{ padding: '8px 12px' }}>
+                {floatingEditorGroup.tabs.map((tab, idx) => (
+                  <div key={`${tab.url}-${idx}`} className="tab-row" style={{ padding: '8px 12px' }}>
                     <img src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}`} style={{ width: '14px', height: '14px' }} />
                     <div className="tab-title" style={{ fontSize: '12px' }}>{tab.title}</div>
-                    <button className="tab-action-btn" onClick={() => setFloatingEditorGroup({...floatingEditorGroup, tabs: floatingEditorGroup.tabs.filter(x => x.url !== tab.url)})}>×</button>
+                    <button className="tab-action-btn" onClick={() => setFloatingEditorGroup({ ...floatingEditorGroup, tabs: floatingEditorGroup.tabs.filter((_, filterIdx) => filterIdx !== idx) })}>×</button>
                   </div>
                 ))}
               </div>
@@ -1038,7 +1299,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="palette-footer">
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-              <input type="checkbox" checked={floatingEditorGroup.schedule?.onLaunch || false} onChange={e => setFloatingEditorGroup({...floatingEditorGroup, schedule: { ...floatingEditorGroup.schedule, onLaunch: e.target.checked }})} /> Auto-open
+              <input type="checkbox" checked={floatingEditorGroup.schedule?.onLaunch || false} onChange={e => setFloatingEditorGroup({ ...floatingEditorGroup, schedule: { ...floatingEditorGroup.schedule, onLaunch: e.target.checked } })} /> Auto-open
             </label>
             <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
               <button className="card-btn" onClick={() => setFloatingEditorGroup(null)}>Cancel</button>
@@ -1073,7 +1334,7 @@ export const Dashboard: React.FC = () => {
             <div className="palette-header">
               <div className="palette-section-label">Duplicate Management</div>
               <div className="tab-action-btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowDuplicateModal(false); }} title="Close">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </div>
             </div>
             <div className="palette-list" style={{ padding: '20px' }}>
@@ -1103,9 +1364,9 @@ export const Dashboard: React.FC = () => {
                         <button className="card-btn danger" onClick={async () => {
                           const toClose = tabs.slice(1).map(t => t.id as number);
                           await chrome.tabs.remove(toClose);
-                          const newD = {...duplicateTabs}; delete newD[url]; setDuplicateTabs(newD);
+                          const newD = { ...duplicateTabs }; delete newD[url]; setDuplicateTabs(newD);
                         }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
                           Close {tabs.length - 1}
                         </button>
                       </div>
@@ -1124,7 +1385,7 @@ export const Dashboard: React.FC = () => {
             <div className="palette-header">
               <div className="palette-section-label">Playing Audio</div>
               <div className="tab-action-btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPlayingTabsModal(null); }} title="Close">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </div>
             </div>
             <div className="palette-list" style={{ padding: '16px' }}>
@@ -1134,8 +1395,8 @@ export const Dashboard: React.FC = () => {
                     <img src={t.favIconUrl} style={{ width: '16px', height: '16px' }} />
                     <div style={{ fontSize: '13px' }}>{t.title}</div>
                   </div>
-                  <button className="card-btn primary" onClick={() => { if(t.id) chrome.tabs.update(t.id, { active: true }); }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                  <button className="card-btn primary" onClick={() => { if (t.id) chrome.tabs.update(t.id, { active: true }); }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
                     Go
                   </button>
                 </div>
@@ -1149,14 +1410,14 @@ export const Dashboard: React.FC = () => {
         <div className="palette-overlay" onClick={() => setShowCommandPalette(false)}>
           <div className="palette-content" onClick={e => e.stopPropagation()}>
             <div className="palette-input-wrap">
-              <input 
-                ref={commandInputRef} 
-                className="palette-input" 
-                value={commandQuery} 
-                onChange={e => { setCommandQuery(e.target.value); setCommandSelectedIndex(0); }} 
+              <input
+                ref={commandInputRef}
+                className="palette-input"
+                value={commandQuery}
+                onChange={e => { setCommandQuery(e.target.value); setCommandSelectedIndex(0); }}
                 onKeyDown={handleCommandKeyDown}
-                placeholder="Search tabs..." 
-                autoFocus 
+                placeholder="Search tabs..."
+                autoFocus
               />
             </div>
             <div className="palette-list">

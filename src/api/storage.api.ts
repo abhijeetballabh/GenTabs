@@ -1,4 +1,7 @@
-import type { Group } from '../types/group';
+import { GroupSchema, type Group } from '../types/group';
+import { z } from 'zod';
+
+const GroupArraySchema = z.array(GroupSchema).catch([]);
 
 const STORAGE_KEY = 'gentabs_groups';
 const CUSTOM_STORAGE_KEY = 'gentabs_custom_groups';
@@ -6,7 +9,8 @@ const CUSTOM_STORAGE_KEY = 'gentabs_custom_groups';
 export const getAllGroups = async (): Promise<Group[]> => {
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY);
-    return (result[STORAGE_KEY] as Group[]) || [];
+    // Parse using Zod to ensure runtime type safety
+    return GroupArraySchema.parse(result[STORAGE_KEY] || []);
   } catch (error) {
     console.error('Failed to get all groups from storage:', error);
     return [];
@@ -55,7 +59,8 @@ export const clearAllGroups = async (): Promise<void> => {
 export const getCustomGroups = async (): Promise<Group[]> => {
   try {
     const result = await chrome.storage.local.get(CUSTOM_STORAGE_KEY);
-    return (result[CUSTOM_STORAGE_KEY] as Group[]) || [];
+    // Parse using Zod for robust data hydration
+    return GroupArraySchema.parse(result[CUSTOM_STORAGE_KEY] || []);
   } catch (error) {
     console.error('Failed to get custom groups:', error);
     return [];

@@ -47,6 +47,7 @@ chrome.tabs.onRemoved.addListener(async () => {
   try {
     const tabs = await chrome.tabs.query({});
     await trackDailyTabCount(tabs.length);
+    updateBadge(tabs.length);
   } catch(e) {
     // ignore
   }
@@ -56,9 +57,25 @@ chrome.tabs.onCreated.addListener(async () => {
   try {
     const tabs = await chrome.tabs.query({});
     await trackDailyTabCount(tabs.length);
+    updateBadge(tabs.length);
   } catch(e) {
     // ignore
   }
+});
+
+const updateBadge = (count: number) => {
+  try {
+    chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
+    chrome.action.setBadgeBackgroundColor({ color: count > 20 ? '#ef4444' : '#2563eb' });
+  } catch (e) { /* ignore */ }
+};
+
+// Set badge on extension startup
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    const tabs = await chrome.tabs.query({});
+    updateBadge(tabs.length);
+  } catch(e) { /* ignore */ }
 });
 
 // Scheduled Workspace Restore on Startup
