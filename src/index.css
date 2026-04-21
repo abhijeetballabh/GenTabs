@@ -524,7 +524,7 @@ body {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  overflow: visible;
+  overflow: hidden;
   transition: box-shadow var(--transition-normal), border-color var(--transition-normal);
   margin-bottom: 8px;
 }

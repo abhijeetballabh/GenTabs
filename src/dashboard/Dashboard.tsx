@@ -4,35 +4,48 @@ import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from
 import { MatrixBackground } from './components/MatrixBackground';
 
 const TiltCard = ({ children, className, style, ...rest }: any) => {
+  const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-  const mouseXSpring = useSpring(x, { stiffness: 150, damping: 15 });
-  const mouseYSpring = useSpring(y, { stiffness: 150, damping: 15 });
-  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
-  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
+  const mouseXSpring = useSpring(x, { stiffness: 120, damping: 30 });
+  const mouseYSpring = useSpring(y, { stiffness: 120, damping: 30 });
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["4deg", "-4deg"]);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-4deg", "4deg"]);
+
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
-    <motion.div
-      style={{ ...style, perspective: 1200, rotateX, rotateY, transformStyle: "preserve-3d" }}
-      className={className}
-      onMouseMove={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const width = rect.width;
-        const height = rect.height;
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-        const xPct = mouseX / width - 0.5;
-        const yPct = mouseY / height - 0.5;
-        x.set(xPct);
-        y.set(yPct);
-      }}
-      onMouseLeave={() => { x.set(0); y.set(0); }}
-      {...rest}
-    >
-      <div style={{ transform: "translateZ(30px)", height: '100%', width: '100%', borderRadius: 'inherit' }}>
+    <div style={{ perspective: '1000px', overflow: 'visible' }}>
+      <motion.div
+        ref={ref}
+        style={{
+          ...style,
+          rotateX,
+          rotateY,
+          scale: isHovered ? 1.015 : 1,
+          z: isHovered ? 8 : 0,
+          transformStyle: 'preserve-3d',
+          willChange: 'transform',
+          transition: 'box-shadow 0.2s ease-out',
+          boxShadow: isHovered
+            ? '0 10px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.06)'
+            : '0 1px 3px rgba(0,0,0,0.04)',
+        }}
+        className={className}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const xPct = (e.clientX - rect.left) / rect.width - 0.5;
+          const yPct = (e.clientY - rect.top) / rect.height - 0.5;
+          x.set(xPct);
+          y.set(yPct);
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => { x.set(0); y.set(0); setIsHovered(false); }}
+        {...rest}
+      >
         {children}
-      </div>
-    </motion.div>
+      </motion.div>
+    </div>
   );
 };
 
@@ -109,8 +122,13 @@ export const Dashboard: React.FC = () => {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [playingTabsModal, setPlayingTabsModal] = useState<chrome.tabs.Tab[] | null>(null);
 
+  // Floating editor: URL input + domain grouping
+  const [editorUrlInput, setEditorUrlInput] = useState('');
+  const [editorUrlError, setEditorUrlError] = useState('');
+  const [domainSuggestions, setDomainSuggestions] = useState<{ domain: string; favicon: string; tabs: Tab[]; count: number }[]>([]);
 
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+
   const [commandQuery, setCommandQuery] = useState('');
   const [commandSelectedIndex, setCommandSelectedIndex] = useState(0);
   const commandInputRef = useRef<HTMLInputElement>(null);
@@ -632,13 +650,68 @@ export const Dashboard: React.FC = () => {
   };
 
   // FLOATING EDITOR HANDLERS
-  const openFloatingEditor = (group: Group) => {
+  const openFloatingEditor = async (group: Group) => {
     setFloatingEditorGroup(group);
+    setEditorUrlInput('');
+    setEditorUrlError('');
     const w = 480;
     const h = 520;
     setPanelSize({ w, h });
     setPanelPos({ x: Math.max(20, (window.innerWidth - w) / 2), y: Math.max(20, (window.innerHeight - h) / 2) });
+
+    // Load domain suggestions from current window tabs
+    try {
+      const currentTabs = await chrome.tabs.query({ currentWindow: true });
+      const domainMap: Record<string, { favicon: string; tabs: Tab[] }> = {};
+      currentTabs.forEach(t => {
+        if (!t.url || t.url.startsWith('chrome://') || t.url.startsWith('chrome-extension://')) return;
+        let domain = '';
+        try { domain = new URL(t.url).hostname; } catch { return; }
+        if (!domainMap[domain]) domainMap[domain] = { favicon: t.favIconUrl || `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, tabs: [] };
+        domainMap[domain].tabs.push({ url: t.url, title: t.title || '', favicon: t.favIconUrl || '', domain, lastAccessed: Date.now() });
+      });
+      const suggestions = Object.entries(domainMap)
+        .map(([domain, data]) => ({ domain, favicon: data.favicon, tabs: data.tabs, count: data.tabs.length }))
+        .filter(s => s.count >= 1)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 12);
+      setDomainSuggestions(suggestions);
+    } catch { setDomainSuggestions([]); }
   };
+
+  const handleEditorAddUrl = () => {
+    if (!floatingEditorGroup) return;
+    const raw = editorUrlInput.trim();
+    if (!raw) return;
+    let url = raw;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    try { new URL(url); } catch {
+      setEditorUrlError('Invalid URL');
+      setTimeout(() => setEditorUrlError(''), 2000);
+      return;
+    }
+    if (floatingEditorGroup.tabs.some(t => t.url === url)) {
+      setEditorUrlError('Already added');
+      setTimeout(() => setEditorUrlError(''), 2000);
+      return;
+    }
+    let domain = '';
+    try { domain = new URL(url).hostname; } catch {}
+    const newTab: Tab = { url, title: domain || url, favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, domain, lastAccessed: Date.now() };
+    setFloatingEditorGroup({ ...floatingEditorGroup, tabs: [...floatingEditorGroup.tabs, newTab] });
+    setEditorUrlInput('');
+    setEditorUrlError('');
+  };
+
+  const handleAddDomainGroup = (suggestion: { domain: string; tabs: Tab[] }) => {
+    if (!floatingEditorGroup) return;
+    const existingUrls = new Set(floatingEditorGroup.tabs.map(t => t.url));
+    const newTabs = suggestion.tabs.filter(t => !existingUrls.has(t.url));
+    setFloatingEditorGroup({ ...floatingEditorGroup, tabs: [...floatingEditorGroup.tabs, ...newTabs] });
+    setDomainSuggestions(prev => prev.filter(s => s.domain !== suggestion.domain));
+  };
+
+
 
   const handleEditCustomGroup = (group: Group, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1082,21 +1155,20 @@ export const Dashboard: React.FC = () => {
 
         {/* LATEST SESSION */}
         {latestSessionToShow && (
-          <section style={{ marginBottom: '40px' }}>
+          <section style={{ marginBottom: '40px', overflow: 'visible' }}>
             <div className="section-header"><h2 className="section-title">Latest Session</h2></div>
-            <div style={{
-              borderRadius: 'var(--radius-lg)',
-              background: 'linear-gradient(135deg, rgba(37,99,235,0.08), rgba(139,92,246,0.06))',
-              border: '1px solid rgba(37,99,235,0.25)',
-              boxShadow: '0 0 0 1px rgba(37,99,235,0.1), inset 0 1px 0 rgba(255,255,255,0.06)',
-              position: 'relative',
-              overflow: 'hidden'
-            }}>
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #2563eb, #7c3aed, #06b6d4)' }} />
-              <TiltCard>
-                {renderSessionGroup(latestSessionToShow)}
-              </TiltCard>
-            </div>
+            <TiltCard
+              className="session-card"
+              style={{
+                background: 'var(--bg-surface)',
+                borderImage: 'linear-gradient(90deg, #2563eb, #7c3aed, #06b6d4) 1',
+                borderImageSlice: '1 0 0 0',
+                borderTop: '3px solid',
+                position: 'relative',
+              }}
+            >
+              {renderSessionGroup(latestSessionToShow)}
+            </TiltCard>
           </section>
         )}
 
@@ -1114,7 +1186,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gridAutoFlow: 'dense', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gridAutoFlow: 'dense', gap: '20px', overflow: 'visible' }}>
             {filteredCustomGroups.map((group, globalIdx) => {
               const uniqueExpansionId = `${group.id}-${globalIdx}`;
               const isLarge = group.tabs.length > 5;
@@ -1202,7 +1274,7 @@ export const Dashboard: React.FC = () => {
         {remainingSessionsToShow.length > 0 && (
           <section style={{ marginBottom: '60px' }}>
             <div className="section-header"><h2 className="section-title">Previous Sessions</h2></div>
-            <div className="card-track">
+            <div className="card-track" style={{ overflow: 'visible', overflowX: 'auto' }}>
               {remainingSessionsToShow.map(session => (
                 <div key={session.id} style={{ minWidth: '400px', scrollSnapAlign: 'start', flexShrink: 0 }}>
                   <TiltCard style={{ height: '100%' }}>
@@ -1285,11 +1357,81 @@ export const Dashboard: React.FC = () => {
             <button className="tab-action-btn" onClick={() => setFloatingEditorGroup(null)} onMouseDown={e => e.stopPropagation()}>×</button>
           </div>
           <div className="panel-body" onDragOver={e => { e.preventDefault(); setDragOverEditor(true); }} onDragLeave={() => setDragOverEditor(false)} onDrop={handleDropToEditor} style={{ background: dragOverEditor ? 'var(--bg-base)' : 'transparent' }}>
-            {floatingEditorGroup.tabs.length === 0 ? <div className="empty-state">Drag tabs here</div> : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* URL INPUT */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  value={editorUrlInput}
+                  onChange={e => { setEditorUrlInput(e.target.value); setEditorUrlError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleEditorAddUrl(); } }}
+                  onMouseDown={e => e.stopPropagation()}
+                  placeholder="Enter URL and press Enter"
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                    border: `1px solid ${editorUrlError ? 'var(--danger)' : 'var(--border-default)'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-base)',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                    transition: 'border-color 0.15s ease',
+                  }}
+                />
+                <button className="card-btn primary" onClick={handleEditorAddUrl} style={{ flexShrink: 0 }}>Add</button>
+              </div>
+              {editorUrlError && (
+                <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '4px', transition: 'opacity 0.2s ease' }}>{editorUrlError}</div>
+              )}
+            </div>
+
+            {/* TAB LIST */}
+            {floatingEditorGroup.tabs.length === 0 ? (
+              <>
+                <div className="empty-state" style={{ padding: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '13px' }}>Drag tabs here or add by URL</div>
+
+                {/* DOMAIN SUGGESTIONS */}
+                {domainSuggestions.length > 0 && (
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: '10px' }}>Group by Domain</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {domainSuggestions.map(s => (
+                        <button
+                          key={s.domain}
+                          onClick={() => handleAddDomainGroup(s)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 12px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            border: '1px solid var(--border-default)',
+                            borderRadius: 'var(--radius-full)',
+                            background: 'var(--bg-elevated)',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            whiteSpace: 'nowrap',
+                          }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--accent-soft)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-border)'; (e.currentTarget as HTMLElement).style.color = 'var(--accent-primary)'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-default)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
+                        >
+                          <img src={s.favicon} alt="" style={{ width: '14px', height: '14px', borderRadius: '2px' }} />
+                          <span>{s.domain}</span>
+                          <span style={{ fontSize: '10px', fontWeight: 700, background: 'var(--border-subtle)', borderRadius: '10px', padding: '1px 6px', color: 'var(--text-tertiary)' }}>{s.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {floatingEditorGroup.tabs.map((tab, idx) => (
                   <div key={`${tab.url}-${idx}`} className="tab-row" style={{ padding: '8px 12px' }}>
-                    <img src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}`} style={{ width: '14px', height: '14px' }} />
+                    <img src={tab.favicon || `https://www.google.com/s2/favicons?domain=${tab.domain}`} style={{ width: '14px', height: '14px', borderRadius: '2px' }} />
                     <div className="tab-title" style={{ fontSize: '12px' }}>{tab.title}</div>
                     <button className="tab-action-btn" onClick={() => setFloatingEditorGroup({ ...floatingEditorGroup, tabs: floatingEditorGroup.tabs.filter((_, filterIdx) => filterIdx !== idx) })}>×</button>
                   </div>
@@ -1297,6 +1439,7 @@ export const Dashboard: React.FC = () => {
               </div>
             )}
           </div>
+
           <div className="palette-footer">
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
               <input type="checkbox" checked={floatingEditorGroup.schedule?.onLaunch || false} onChange={e => setFloatingEditorGroup({ ...floatingEditorGroup, schedule: { ...floatingEditorGroup.schedule, onLaunch: e.target.checked } })} /> Auto-open
